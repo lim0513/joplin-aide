@@ -115,6 +115,15 @@ function setBusy(busy) {
   }
 }
 
+function sendText(text) {
+  if (_busy) return;
+  text = String(text || '').trim();
+  if (!text) return;
+  setBusy(true);
+  addBubble('cc-user', escapeHtml(text).replace(/\n/g, '<br>'));
+  postMsg({ name: 'send', text: text });
+}
+
 function sendCurrent() {
   if (_busy) return; // a request is running - keep the draft, ignore the send
   var input = el('cc-input');
@@ -203,6 +212,17 @@ document.addEventListener('click', function (e) {
   if (t.id === 'cc-attach') {
     var fi = el('cc-file');
     if (fi) fi.click();
+    return;
+  }
+  var qBtn = t.closest ? t.closest('.cc-q-option') : null;
+  if (qBtn) {
+    var qCard = qBtn.closest('.cc-question-card');
+    if (qCard) {
+      var btns = qCard.querySelectorAll('.cc-q-option');
+      for (var qb = 0; qb < btns.length; qb++) btns[qb].disabled = true;
+      qCard.classList.add('cc-q-answered');
+    }
+    sendText(qBtn.dataset.value);
     return;
   }
   var attDel = t.closest ? t.closest('.cc-att-del') : null;
@@ -357,6 +377,24 @@ webviewApi.onMessage(function (msg) {
     } else {
       addBubble('cc-assistant', renderLite(m.text));
     }
+  } else if (m.name === 'userQuestion') {
+    endStreamBubble();
+    var qs = m.questions || [];
+    for (var qi = 0; qi < qs.length; qi++) {
+      var q = qs[qi];
+      var card = document.createElement('div');
+      card.className = 'cc-question-card';
+      var html = '<div class="cc-q-text">' + escapeHtml(q.question || '') + '</div><div class="cc-q-options">';
+      var opts = q.options || [];
+      for (var oi = 0; oi < opts.length; oi++) {
+        var label = typeof opts[oi] === 'string' ? opts[oi] : (opts[oi].label || '');
+        html += '<button class="cc-q-option" data-value="' + escapeHtml(label) + '">' + escapeHtml(label) + '</button>';
+      }
+      html += '</div>';
+      card.innerHTML = html;
+      appendToMessages(card);
+    }
+    scrollToBottom();
   } else if (m.name === 'toolUse') {
     endStreamBubble();
     addToolChip('⚙ ' + m.tool);

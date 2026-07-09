@@ -534,7 +534,8 @@ joplin.plugins.register({
       const systemPrompt = 'You are embedded in the Joplin note-taking app as an assistant. '
         + 'Use the mcp__joplin tools to read, search, create and edit the user\'s notes and notebooks. '
         + 'Note bodies are Markdown. When editing a note, read it first and provide the full new body. '
-        + 'Write operations may require user approval; if one is declined, do not retry it.'
+        + 'Write operations may require user approval; if one is declined, do not retry it. '
+        + 'The AskUserQuestion tool does NOT work in this embedded panel - when you need to ask the user something, ask directly in your text reply.'
         + noteContext;
 
       const extraTools = String((await joplin.settings.value('extraAllowedTools')) || '')
@@ -635,8 +636,16 @@ joplin.plugins.register({
             post({ name: 'assistantText', text: block.text });
           } else if (block.type === 'tool_use') {
             const shortName = String(block.name || '').replace(/^mcp__joplin__/, '');
-            record('tool', shortName);
-            post({ name: 'toolUse', tool: shortName });
+            if (shortName === 'AskUserQuestion' && block.input && Array.isArray(block.input.questions)) {
+              // The interactive tool cannot render in print mode - surface the
+              // question(s) as quick-reply buttons instead. Clicking one sends
+              // the choice as the next user message.
+              record('tool', shortName);
+              post({ name: 'userQuestion', questions: block.input.questions });
+            } else {
+              record('tool', shortName);
+              post({ name: 'toolUse', tool: shortName });
+            }
           }
         }
       } else if (ev.type === 'result') {
