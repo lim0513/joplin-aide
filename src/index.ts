@@ -59,17 +59,17 @@ joplin.plugins.register({
         description: 'Passed as --model. Leave empty to use the CLI default.',
       },
       'requireWriteConfirm': {
-        section: 'joplinClaude', type: SETTING_BOOL, value: true, public: true,
+        section: 'joplinClaude', type: SETTING_BOOL, value: true, public: true, advanced: true,
         label: 'Confirm before Claude modifies notes',
         description: 'Create/update/delete operations wait for your approval in the chat panel.',
       },
       'autoApproveAll': {
-        section: 'joplinClaude', type: SETTING_BOOL, value: false, public: true,
+        section: 'joplinClaude', type: SETTING_BOOL, value: false, public: true, advanced: true,
         label: '\uD83D\uDD34 \u26A0 AUTO MODE \u2014 approve ALL permission requests \u26A0',
         description: 'DANGER: when enabled, EVERY request is approved automatically without asking - note edits and deletions, AND any tool Claude asks for (potentially including shell commands). Claude gets free rein over your notes. Equivalent to running Claude Code with permissions disabled. Leave OFF unless you fully accept the risk.',
       },
       'extraAllowedTools': {
-        section: 'joplinClaude', type: SETTING_STRING, value: 'WebSearch,WebFetch', public: true,
+        section: 'joplinClaude', type: SETTING_STRING, value: 'WebSearch,WebFetch', public: true, advanced: true,
         label: 'Additional allowed Claude tools',
         description: 'Comma-separated Claude Code tools to auto-allow besides the Joplin note tools. Tools NOT listed here trigger an Approve/Decline card in the chat panel. Default: WebSearch,WebFetch.',
       },
