@@ -118,6 +118,34 @@
 .cc-approve { background: #3d8b40; color: #fff; }
 .cc-decline { background: rgba(127, 127, 127, 0.3); color: inherit; }
 
+/* ---- slim scrollbars (messages + history) ---- */
+#cc-messages::-webkit-scrollbar,
+.cc-hist-box::-webkit-scrollbar,
+#cc-input::-webkit-scrollbar {
+  width: 6px;
+}
+#cc-messages::-webkit-scrollbar-track,
+.cc-hist-box::-webkit-scrollbar-track,
+#cc-input::-webkit-scrollbar-track {
+  background: transparent;
+}
+#cc-messages::-webkit-scrollbar-thumb,
+.cc-hist-box::-webkit-scrollbar-thumb,
+#cc-input::-webkit-scrollbar-thumb {
+  background: rgba(127, 127, 127, 0.35);
+  border-radius: 3px;
+}
+#cc-messages::-webkit-scrollbar-thumb:hover,
+.cc-hist-box::-webkit-scrollbar-thumb:hover,
+#cc-input::-webkit-scrollbar-thumb:hover {
+  background: rgba(127, 127, 127, 0.6);
+}
+.cc-code::-webkit-scrollbar { height: 6px; }
+.cc-code::-webkit-scrollbar-thumb {
+  background: rgba(127, 127, 127, 0.35);
+  border-radius: 3px;
+}
+
 /* ---- history overlay ---- */
 #cc-history-overlay {
   position: absolute;

@@ -54,6 +54,11 @@ joplin.plugins.register({
         label: 'Confirm before Claude modifies notes',
         description: 'Create/update/delete operations wait for your approval in the chat panel.',
       },
+      'extraAllowedTools': {
+        section: 'joplinClaude', type: SETTING_STRING, value: 'WebSearch,WebFetch', public: true,
+        label: 'Additional allowed Claude tools',
+        description: 'Comma-separated Claude Code tools to auto-allow besides the Joplin note tools. Print mode cannot show permission prompts, so anything not listed is silently denied. Default: WebSearch,WebFetch. Do NOT add Bash/Edit/Write unless you know what you are doing.',
+      },
       'extraCliArgs': {
         section: 'joplinClaude', type: SETTING_STRING, value: '', public: true, advanced: true,
         label: 'Extra CLI arguments',
@@ -451,12 +456,16 @@ joplin.plugins.register({
         + 'Write operations may require user approval; if one is declined, do not retry it.'
         + noteContext;
 
+      const extraTools = String((await joplin.settings.value('extraAllowedTools')) || '')
+        .split(',').map((t: string) => t.trim()).filter((t: string) => !!t);
+      const allowedTools = ['mcp__joplin'].concat(extraTools).join(',');
+
       const args: string[] = [
         '-p',
         '--output-format', 'stream-json',
         '--verbose',
         '--mcp-config', winQuote(mcpConfigPath),
-        '--allowedTools', 'mcp__joplin',
+        '--allowedTools', winQuote(allowedTools),
         '--append-system-prompt', winQuote(systemPrompt),
       ];
       if (sessionId) { args.push('--resume', sessionId); }
