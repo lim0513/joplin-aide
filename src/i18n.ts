@@ -31,6 +31,8 @@ export const i18nData: { [locale: string]: I18nStrings } = {
     dUpdated: 'Updated note {id}',
     dDeleted: 'Deleted note {id}',
     autoApproved: '⚠ Auto-approved: {s}',
+    alwaysAllow: 'Always (this session)',
+    sessionApproved: '✓ Allowed by session rule: {s}',
   },
   'zh_CN': {
     inputPlaceholder: '向 Claude 询问你的笔记...',
@@ -58,6 +60,8 @@ export const i18nData: { [locale: string]: I18nStrings } = {
     dUpdated: '已修改笔记 {id}',
     dDeleted: '已删除笔记 {id}',
     autoApproved: '⚠ 已自动批准：{s}',
+    alwaysAllow: '本会话内一直允许',
+    sessionApproved: '✓ 按会话授权放行:{s}',
   },
   'ja_JP': {
     inputPlaceholder: 'ノートについて Claude に質問...',
@@ -85,6 +89,8 @@ export const i18nData: { [locale: string]: I18nStrings } = {
     dUpdated: 'ノート {id} を更新しました',
     dDeleted: 'ノート {id} を削除しました',
     autoApproved: '⚠ 自動許可：{s}',
+    alwaysAllow: 'このセッションでは常に許可',
+    sessionApproved: '✓ セッション許可で実行:{s}',
   },
 };
 

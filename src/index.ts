@@ -28,6 +28,7 @@ interface ToolDef {
 interface PendingConfirm {
   resolve: (approved: boolean) => void;
   timer: any;
+  key: string;
 }
 
 const SETTING_STRING = 2;
@@ -243,11 +244,20 @@ joplin.plugins.register({
     const pendingConfirms: { [id: string]: PendingConfirm } = {};
     let confirmSeq = 0;
 
-    async function requestConfirm(summary: string): Promise<boolean> {
+    // "Always allow (this session)" grants, keyed per request kind (e.g.
+    // "update_note" or "tool:Bash"). Cleared on new session / restart.
+    let sessionAllowed: { [key: string]: boolean } = {};
+
+    async function requestConfirm(summary: string, key: string): Promise<boolean> {
       // AUTO MODE: the user explicitly opted into approving everything.
       // Leave a visible trace chip in the chat for each auto-approval.
       if ((await joplin.settings.value('autoApproveAll')) === true) {
         post({ name: 'toolDone', text: fmt(t.autoApproved, { s: summary }) });
+        return true;
+      }
+      // Session-scoped grant from a previous "Always (this session)" click.
+      if (sessionAllowed[key]) {
+        post({ name: 'toolDone', text: fmt(t.sessionApproved, { s: summary }) });
         return true;
       }
       return new Promise((resolve) => {
@@ -257,7 +267,7 @@ joplin.plugins.register({
           post({ name: 'confirmGone', requestId: id });
           resolve(false);
         }, 120000);
-        pendingConfirms[id] = { resolve, timer };
+        pendingConfirms[id] = { resolve, timer, key };
         post({ name: 'confirmWrite', requestId: id, summary });
       });
     }
@@ -284,7 +294,7 @@ joplin.plugins.register({
         const needConfirm = await joplin.settings.value('requireWriteConfirm');
         if (needConfirm !== false) {
           const summary = def.confirmSummary ? def.confirmSummary(args) : name;
-          const ok = await requestConfirm(summary);
+          const ok = await requestConfirm(summary, name);
           if (!ok) return { result: 'The user DECLINED this operation. Do not retry it; ask the user what they would like instead.', isError: true };
         }
       }
@@ -298,7 +308,9 @@ joplin.plugins.register({
           const raw = JSON.stringify(args.input || {});
           detail = raw.length > 160 ? raw.slice(0, 160) + '...' : raw;
         } catch (_) {}
-        const ok = await requestConfirm(fmt(t.cToolPermission, { name: String(args.tool_name || '?') }) + (detail && detail !== '{}' ? ' ' + detail : ''));
+        const ok = await requestConfirm(
+          fmt(t.cToolPermission, { name: String(args.tool_name || '?') }) + (detail && detail !== '{}' ? ' ' + detail : ''),
+          'tool:' + String(args.tool_name || '?'));
         return {
           result: JSON.stringify(ok
             ? { behavior: 'allow', updatedInput: args.input || {} }
@@ -615,6 +627,7 @@ joplin.plugins.register({
       } else if (msg.name === 'newSession') {
         sessionId = '';
         currentConv = null;
+        sessionAllowed = {};
         killChild();
       } else if (msg.name === 'listHistory') {
         const items = conversations
@@ -644,6 +657,9 @@ joplin.plugins.register({
         if (pending) {
           clearTimeout(pending.timer);
           delete pendingConfirms[msg.requestId];
+          if (msg.approved === true && msg.always === true) {
+            sessionAllowed[pending.key] = true;
+          }
           pending.resolve(msg.approved === true);
         }
       }

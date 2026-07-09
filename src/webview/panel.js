@@ -165,7 +165,12 @@ document.addEventListener('click', function (e) {
   var btn = t.closest ? t.closest('.cc-confirm-btn') : null;
   if (btn) {
     var card = btn.closest('.cc-confirm-card');
-    postMsg({ name: 'confirmResult', requestId: btn.dataset.requestId, approved: btn.dataset.approved === '1' });
+    postMsg({
+      name: 'confirmResult',
+      requestId: btn.dataset.requestId,
+      approved: btn.dataset.approved === '1',
+      always: btn.dataset.always === '1',
+    });
     if (card) card.remove();
     return;
   }
@@ -247,6 +252,7 @@ webviewApi.onMessage(function (msg) {
     card.innerHTML = '<div class="cc-confirm-text">⚠ ' + escapeHtml(m.summary) + '</div>'
       + '<div class="cc-confirm-actions">'
       + '<button class="cc-confirm-btn cc-approve" data-request-id="' + m.requestId + '" data-approved="1">' + escapeHtml(T('approve')) + '</button>'
+      + '<button class="cc-confirm-btn cc-always" data-request-id="' + m.requestId + '" data-approved="1" data-always="1">' + escapeHtml(T('alwaysAllow')) + '</button>'
       + '<button class="cc-confirm-btn cc-decline" data-request-id="' + m.requestId + '" data-approved="0">' + escapeHtml(T('decline')) + '</button>'
       + '</div>';
     c.appendChild(card);
