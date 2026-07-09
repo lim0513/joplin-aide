@@ -526,6 +526,7 @@ joplin.plugins.register({
       const args: string[] = [
         '-p',
         '--output-format', 'stream-json',
+        '--include-partial-messages',
         '--verbose',
         '--mcp-config', winQuote(mcpConfigPath),
         '--allowedTools', winQuote(allowedTools),
@@ -588,6 +589,19 @@ joplin.plugins.register({
       if (currentConv && sessionId && currentConv.sessionId !== sessionId) {
         currentConv.sessionId = sessionId;
         saveHistory();
+      }
+
+      // Token-level streaming (--include-partial-messages): text deltas drive
+      // a live bubble in the webview; the final 'assistant' event replaces it
+      // with the complete text (authoritative, also recorded into history).
+      if (ev.type === 'stream_event' && ev.event) {
+        const se = ev.event;
+        if (se.type === 'content_block_start' && se.content_block && se.content_block.type === 'text') {
+          post({ name: 'assistantStart' });
+        } else if (se.type === 'content_block_delta' && se.delta && se.delta.type === 'text_delta' && se.delta.text) {
+          post({ name: 'assistantDelta', text: se.delta.text });
+        }
+        return;
       }
 
       if (ev.type === 'assistant' && ev.message && Array.isArray(ev.message.content)) {

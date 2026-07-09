@@ -183,9 +183,31 @@ document.addEventListener('keydown', function (e) {
   }
 });
 
+// Live streaming bubble state (token-level deltas)
+var _streamBubble = null;
+var _streamRaw = '';
+
+function endStreamBubble() {
+  _streamBubble = null;
+  _streamRaw = '';
+}
+
 webviewApi.onMessage(function (msg) {
   if (!msg || !msg.message) return;
   var m = msg.message;
+
+  if (m.name === 'assistantStart') {
+    _streamRaw = '';
+    _streamBubble = addBubble('cc-assistant', '');
+    return;
+  }
+  if (m.name === 'assistantDelta') {
+    if (!_streamBubble) { _streamRaw = ''; _streamBubble = addBubble('cc-assistant', ''); }
+    _streamRaw += m.text;
+    _streamBubble.innerHTML = renderLite(_streamRaw);
+    scrollToBottom();
+    return;
+  }
 
   if (m.name === 'historyList') {
     var old2 = el('cc-history-overlay');
@@ -232,16 +254,27 @@ webviewApi.onMessage(function (msg) {
     var nc = el('cc-note-context');
     if (nc) nc.textContent = m.title ? '\uD83D\uDCC4 ' + m.title : '';
   } else if (m.name === 'assistantText') {
-    addBubble('cc-assistant', renderLite(m.text));
+    // Final authoritative text: replace the live streaming bubble if open,
+    // otherwise plain append (fallback when deltas are unavailable).
+    if (_streamBubble) {
+      _streamBubble.innerHTML = renderLite(m.text);
+      endStreamBubble();
+      scrollToBottom();
+    } else {
+      addBubble('cc-assistant', renderLite(m.text));
+    }
   } else if (m.name === 'toolUse') {
+    endStreamBubble();
     addToolChip('⚙ ' + m.tool);
   } else if (m.name === 'toolDone') {
     addToolChip('✔ ' + m.text);
   } else if (m.name === 'busy') {
     setBusy(m.busy === true);
   } else if (m.name === 'turnDone') {
+    endStreamBubble();
     setBusy(false);
   } else if (m.name === 'error') {
+    endStreamBubble();
     addBubble('cc-error', escapeHtml(m.text));
     setBusy(false);
   } else if (m.name === 'confirmWrite') {

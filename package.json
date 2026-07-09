@@ -1,6 +1,6 @@
 {
   "name": "joplin-plugin-claude",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Chat with Claude inside Joplin - Claude can read, search, create and edit your notes (powered by your local Claude Code CLI)",
   "author": "lim0513",
   "homepage": "https://github.com/lim0513/joplin-claude",
