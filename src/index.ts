@@ -403,8 +403,11 @@ joplin.plugins.register({
       return items;
     }
 
-    // <profile>/resources holds attachment files; dataDir is <profile>/plugin-data/<id>
-    const resourcesDir = nodePath.resolve(dataDir, '..', '..', 'resources');
+    // <profile>/resources holds attachment files; dataDir is <profile>/plugin-data/<id>.
+    // Resolved lazily: dataDir is declared later in onStart (TDZ at this point).
+    function getResourcesDir(): string {
+      return nodePath.resolve(dataDir, '..', '..', 'resources');
+    }
 
     async function findOrCreateTag(title: string, create: boolean): Promise<any> {
       const r = await joplin.data.get(['search'], { query: title, type: 'tag', fields: ['id', 'title'] });
@@ -494,7 +497,7 @@ joplin.plugins.register({
             title: res.title,
             mime: res.mime,
             size: res.size,
-            local_path: nodePath.join(resourcesDir, res.id + (res.file_extension ? '.' + res.file_extension : '')),
+            local_path: nodePath.join(getResourcesDir(), res.id + (res.file_extension ? '.' + res.file_extension : '')),
           }));
           return { result: items.length ? items : 'This note has no attachments.' };
         }
