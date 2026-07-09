@@ -149,6 +149,31 @@ function handleFiles(fileList) {
   for (var i = 0; i < fileList.length && i < 5; i++) sendFileToBackend(fileList[i]);
 }
 
+// Paste images (e.g. screenshots) straight from the clipboard as attachments.
+// Text paste is left untouched.
+document.addEventListener('paste', function (e) {
+  if (!e.clipboardData) return;
+  var files = [];
+  var items = e.clipboardData.items || [];
+  for (var i = 0; i < items.length; i++) {
+    if (items[i].kind === 'file') {
+      var f = items[i].getAsFile();
+      if (f) files.push(f);
+    }
+  }
+  if (!files.length) return;
+  e.preventDefault();
+  for (var j = 0; j < files.length && j < 5; j++) {
+    var pf = files[j];
+    // Pasted screenshots come in with generic names - stamp them.
+    if (!pf.name || pf.name === 'image.png') {
+      var ext = (pf.type && pf.type.indexOf('/') >= 0) ? pf.type.split('/')[1] : 'png';
+      pf = new File([pf], 'paste-' + Date.now() + '-' + j + '.' + ext, { type: pf.type || 'image/png' });
+    }
+    sendFileToBackend(pf);
+  }
+});
+
 document.addEventListener('dragover', function (e) { e.preventDefault(); });
 document.addEventListener('drop', function (e) {
   e.preventDefault();
