@@ -39,9 +39,10 @@ joplin.plugins.register({
     });
     await joplin.settings.registerSettings({
       'claudePath': {
-        section: 'joplinClaude', type: SETTING_STRING, value: 'claude', public: true,
-        label: 'Claude Code CLI command',
-        description: 'Command or full path of the claude CLI. Default: claude (must be on PATH).',
+        section: 'joplinClaude', type: SETTING_STRING, value: '', public: true,
+        subType: 'file_path', // renders a file picker in the options screen
+        label: 'Claude Code CLI path (claude.exe)',
+        description: 'Full path to the claude executable. Leave empty to use "claude" from the system PATH.',
       },
       'claudeModel': {
         section: 'joplinClaude', type: SETTING_STRING, value: '', public: true,
@@ -433,7 +434,8 @@ joplin.plugins.register({
         post({ name: 'busy', busy: true });
         return;
       }
-      const claudePath = (await joplin.settings.value('claudePath')) || 'claude';
+      // Empty setting = resolve "claude" via the system PATH.
+      const claudePath = String((await joplin.settings.value('claudePath')) || '').trim() || 'claude';
       const model = await joplin.settings.value('claudeModel');
       const extraArgs = String((await joplin.settings.value('extraCliArgs')) || '').trim();
 
@@ -464,7 +466,7 @@ joplin.plugins.register({
       record('user', prompt);
       post({ name: 'busy', busy: true });
       try {
-        child = nodeChildProcess.spawn(claudePath, args, {
+        child = nodeChildProcess.spawn(winQuote(claudePath), args, {
           shell: process.platform === 'win32',
           windowsHide: true,
           stdio: ['pipe', 'pipe', 'pipe'],
