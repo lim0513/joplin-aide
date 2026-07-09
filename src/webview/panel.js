@@ -2,6 +2,10 @@
 
 function postMsg(msg) { webviewApi.postMessage(msg); }
 
+// True while a claude request is in flight. Sending is locked (button AND
+// Enter key) until the backend reports the turn finished or errored.
+var _busy = false;
+
 function el(id) { return document.getElementById(id); }
 
 function escapeHtml(text) {
@@ -61,6 +65,7 @@ function addToolChip(text) {
 }
 
 function setBusy(busy) {
+  _busy = busy;
   var send = el('cc-send');
   var stop = el('cc-stop');
   var input = el('cc-input');
@@ -84,10 +89,14 @@ function setBusy(busy) {
 }
 
 function sendCurrent() {
+  if (_busy) return; // a request is running - keep the draft, ignore the send
   var input = el('cc-input');
   if (!input) return;
   var text = input.value.trim();
   if (!text) return;
+  // Lock immediately (before the backend's busy event arrives) so a rapid
+  // double-Enter cannot fire two requests.
+  setBusy(true);
   input.value = '';
   addBubble('cc-user', escapeHtml(text).replace(/\n/g, '<br>'));
   postMsg({ name: 'send', text: text });

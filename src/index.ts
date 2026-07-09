@@ -405,6 +405,20 @@ joplin.plugins.register({
     let child: any = null;
     let sessionId: string = '';
 
+    // Force-stop the running request. On Windows child.kill() only terminates
+    // the wrapper shell - taskkill /T /F takes the whole process tree down so
+    // the claude process (and its MCP proxy) cannot survive the stop button.
+    function killChild(): void {
+      if (!child) return;
+      try {
+        if (process.platform === 'win32') {
+          nodeChildProcess.spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true });
+        } else {
+          child.kill('SIGTERM');
+        }
+      } catch (_) {}
+    }
+
     function winQuote(s: string): string {
       if (process.platform !== 'win32') return s;
       if (!/[\s"]/.test(s)) return s;
@@ -413,7 +427,10 @@ joplin.plugins.register({
 
     async function runClaude(prompt: string): Promise<void> {
       if (child) {
+        // Safety net (the webview also locks sending while busy). Reset the
+        // webview's busy lock or it would stay disabled forever.
         post({ name: 'error', text: 'A request is already running.' });
+        post({ name: 'busy', busy: true });
         return;
       }
       const claudePath = (await joplin.settings.value('claudePath')) || 'claude';
@@ -522,11 +539,11 @@ joplin.plugins.register({
         const text = String(msg.text || '').trim();
         if (text) await runClaude(text);
       } else if (msg.name === 'stop') {
-        if (child) { try { child.kill(); } catch (_) {} }
+        killChild();
       } else if (msg.name === 'newSession') {
         sessionId = '';
         currentConv = null;
-        if (child) { try { child.kill(); } catch (_) {} }
+        killChild();
       } else if (msg.name === 'listHistory') {
         const items = conversations
           .slice()
@@ -536,7 +553,7 @@ joplin.plugins.register({
       } else if (msg.name === 'loadConversation') {
         const conv = conversations.find((c) => c.id === msg.id);
         if (conv) {
-          if (child) { try { child.kill(); } catch (_) {} }
+          killChild();
           currentConv = conv;
           sessionId = conv.sessionId || '';
           post({ name: 'conversationLoaded', messages: conv.messages || [] });
