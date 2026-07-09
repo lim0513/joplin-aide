@@ -62,6 +62,11 @@ joplin.plugins.register({
         label: 'Confirm before Claude modifies notes',
         description: 'Create/update/delete operations wait for your approval in the chat panel.',
       },
+      'autoApproveAll': {
+        section: 'joplinClaude', type: SETTING_BOOL, value: false, public: true,
+        label: '\uD83D\uDD34 \u26A0 AUTO MODE \u2014 approve ALL permission requests \u26A0',
+        description: 'DANGER: when enabled, EVERY request is approved automatically without asking - note edits and deletions, AND any tool Claude asks for (potentially including shell commands). Claude gets free rein over your notes. Equivalent to running Claude Code with permissions disabled. Leave OFF unless you fully accept the risk.',
+      },
       'extraAllowedTools': {
         section: 'joplinClaude', type: SETTING_STRING, value: 'WebSearch,WebFetch', public: true,
         label: 'Additional allowed Claude tools',
@@ -238,7 +243,13 @@ joplin.plugins.register({
     const pendingConfirms: { [id: string]: PendingConfirm } = {};
     let confirmSeq = 0;
 
-    function requestConfirm(summary: string): Promise<boolean> {
+    async function requestConfirm(summary: string): Promise<boolean> {
+      // AUTO MODE: the user explicitly opted into approving everything.
+      // Leave a visible trace chip in the chat for each auto-approval.
+      if ((await joplin.settings.value('autoApproveAll')) === true) {
+        post({ name: 'toolDone', text: fmt(t.autoApproved, { s: summary }) });
+        return true;
+      }
       return new Promise((resolve) => {
         const id = String(++confirmSeq);
         const timer = setTimeout(() => {
