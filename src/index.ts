@@ -67,6 +67,7 @@ joplin.plugins.register({
     await joplin.views.panels.setHtml(panel, [
       '<div id="claude-root">',
       '  <div class="cc-header"><span class="cc-title">Claude</span>',
+      '    <span id="cc-note-context" class="cc-note-context"></span>',
       '    <button id="cc-new" title="New conversation">&#x2795;</button>',
       '  </div>',
       '  <div id="cc-messages"></div>',
@@ -92,6 +93,15 @@ joplin.plugins.register({
       },
     });
     await joplin.views.toolbarButtons.create('claudePanelButton', 'toggleClaudePanel', 'noteToolbar');
+
+    // Keep the panel header showing which note Claude will target.
+    async function pushNoteContext(): Promise<void> {
+      try {
+        const n = await joplin.workspace.selectedNote();
+        post({ name: 'noteContext', title: n ? n.title : '' });
+      } catch (_) {}
+    }
+    await joplin.workspace.onNoteSelectionChange(pushNoteContext);
 
     function post(msg: any): void {
       joplin.views.panels.postMessage(panel, msg);
@@ -448,6 +458,8 @@ joplin.plugins.register({
         post({ name: 'turnDone', isError: ev.is_error === true, costUsd: ev.total_cost_usd });
       }
     }
+
+    await pushNoteContext();
 
     /* ---------- webview messages ---------- */
     await joplin.views.panels.onMessage(panel, async (msg: any) => {

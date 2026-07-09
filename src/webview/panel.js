@@ -126,7 +126,10 @@ webviewApi.onMessage(function (msg) {
   if (!msg || !msg.message) return;
   var m = msg.message;
 
-  if (m.name === 'assistantText') {
+  if (m.name === 'noteContext') {
+    var nc = el('cc-note-context');
+    if (nc) nc.textContent = m.title ? '\uD83D\uDCC4 ' + m.title : '';
+  } else if (m.name === 'assistantText') {
     addBubble('cc-assistant', renderLite(m.text));
   } else if (m.name === 'toolUse') {
     addToolChip('⚙ ' + m.tool);

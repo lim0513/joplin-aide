@@ -16,6 +16,15 @@
   flex-shrink: 0;
 }
 .cc-title { font-weight: bold; }
+.cc-note-context {
+  flex: 1;
+  margin: 0 8px;
+  font-size: 11px;
+  color: var(--joplin-color-faded, #999);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .cc-header button {
   background: transparent;
   border: 1px solid var(--joplin-divider-color, #444);
