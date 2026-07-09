@@ -28,12 +28,20 @@
 }
 .cc-header button {
   background: transparent;
-  border: 1px solid var(--joplin-divider-color, #444);
-  border-radius: 4px;
-  color: inherit;
+  border: none;
+  border-radius: 6px;
+  color: var(--joplin-color-faded, #999);
   cursor: pointer;
-  padding: 2px 8px;
+  padding: 3px 8px;
+  font-size: 13px;
+  line-height: 1;
+  transition: background 0.12s ease, color 0.12s ease;
 }
+.cc-header button:hover {
+  background: rgba(127, 127, 127, 0.18);
+  color: inherit;
+}
+.cc-header button + button { margin-left: 2px; }
 
 #cc-messages {
   flex: 1;
@@ -243,14 +251,40 @@
   font-family: inherit;
   font-size: 13px;
 }
-.cc-input-buttons { display: flex; flex-direction: column; justify-content: flex-end; }
-#cc-send, #cc-stop {
+.cc-input-buttons {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 4px;
+}
+#cc-attach, #cc-send, #cc-stop {
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   width: 34px;
-  height: 30px;
+  height: 28px;
   cursor: pointer;
   font-size: 14px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s ease, filter 0.12s ease;
 }
-#cc-send { background: var(--joplin-selected-color, #4a9cf5); color: #fff; }
-#cc-stop { background: #b33; color: #fff; }
+#cc-attach {
+  background: transparent;
+  color: var(--joplin-color-faded, #999);
+}
+#cc-attach:hover {
+  background: rgba(127, 127, 127, 0.18);
+  color: inherit;
+}
+#cc-send {
+  background: var(--joplin-selected-color, #4a9cf5);
+  color: #fff;
+}
+#cc-send:hover { filter: brightness(1.15); }
+#cc-stop {
+  background: #c0392b;
+  color: #fff;
+}
+#cc-stop:hover { filter: brightness(1.15); }
