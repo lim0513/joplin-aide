@@ -57,7 +57,7 @@ joplin.plugins.register({
       'extraAllowedTools': {
         section: 'joplinClaude', type: SETTING_STRING, value: 'WebSearch,WebFetch', public: true,
         label: 'Additional allowed Claude tools',
-        description: 'Comma-separated Claude Code tools to auto-allow besides the Joplin note tools. Print mode cannot show permission prompts, so anything not listed is silently denied. Default: WebSearch,WebFetch. Do NOT add Bash/Edit/Write unless you know what you are doing.',
+        description: 'Comma-separated Claude Code tools to auto-allow besides the Joplin note tools. Tools NOT listed here trigger an Approve/Decline card in the chat panel. Default: WebSearch,WebFetch.',
       },
       'extraCliArgs': {
         section: 'joplinClaude', type: SETTING_STRING, value: '', public: true, advanced: true,
@@ -199,6 +199,19 @@ joplin.plugins.register({
         },
       },
       {
+        name: 'approval_prompt',
+        description: 'INTERNAL: permission prompt bridge for the Claude Code permission system. Not for direct use.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            tool_name: { type: 'string' },
+            input: { type: 'object' },
+            tool_use_id: { type: 'string' },
+          },
+          required: ['tool_name'],
+        },
+      },
+      {
         name: 'delete_note',
         description: 'Delete a note (moves it to trash).',
         write: true,
@@ -253,6 +266,23 @@ joplin.plugins.register({
           const ok = await requestConfirm(summary);
           if (!ok) return { result: 'The user DECLINED this operation. Do not retry it; ask the user what they would like instead.', isError: true };
         }
+      }
+
+      // Dynamic permission bridge: Claude Code calls this (via
+      // --permission-prompt-tool) whenever a tool outside the allow-list wants
+      // to run. We surface the same Approve/Decline card used for note writes.
+      if (name === 'approval_prompt') {
+        let detail = '';
+        try {
+          const raw = JSON.stringify(args.input || {});
+          detail = raw.length > 160 ? raw.slice(0, 160) + '...' : raw;
+        } catch (_) {}
+        const ok = await requestConfirm('Tool permission: ' + String(args.tool_name || '?') + (detail && detail !== '{}' ? ' ' + detail : ''));
+        return {
+          result: JSON.stringify(ok
+            ? { behavior: 'allow', updatedInput: args.input || {} }
+            : { behavior: 'deny', message: 'The user denied this tool use.' }),
+        };
       }
 
       switch (name) {
@@ -466,6 +496,7 @@ joplin.plugins.register({
         '--verbose',
         '--mcp-config', winQuote(mcpConfigPath),
         '--allowedTools', winQuote(allowedTools),
+        '--permission-prompt-tool', 'mcp__joplin__approval_prompt',
         '--append-system-prompt', winQuote(systemPrompt),
       ];
       if (sessionId) { args.push('--resume', sessionId); }
