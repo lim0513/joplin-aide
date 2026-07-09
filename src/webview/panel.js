@@ -221,8 +221,16 @@ document.addEventListener('click', function (e) {
       var btns = qCard.querySelectorAll('.cc-q-option');
       for (var qb = 0; qb < btns.length; qb++) btns[qb].disabled = true;
       qCard.classList.add('cc-q-answered');
+      qBtn.classList.add('cc-q-chosen');
     }
-    sendText(qBtn.dataset.value);
+    var reqId = qCard ? qCard.dataset.requestId : '';
+    if (reqId) {
+      // ask_user tool: the answer goes back as the tool result (same turn)
+      postMsg({ name: 'questionAnswer', requestId: reqId, value: qBtn.dataset.value });
+    } else {
+      // legacy fallback (built-in AskUserQuestion): answer as a new message
+      sendText(qBtn.dataset.value);
+    }
     return;
   }
   var attDel = t.closest ? t.closest('.cc-att-del') : null;
@@ -384,6 +392,7 @@ webviewApi.onMessage(function (msg) {
       var q = qs[qi];
       var card = document.createElement('div');
       card.className = 'cc-question-card';
+      if (m.requestId) card.dataset.requestId = m.requestId;
       var html = '<div class="cc-q-text">' + escapeHtml(q.question || '') + '</div><div class="cc-q-options">';
       var opts = q.options || [];
       for (var oi = 0; oi < opts.length; oi++) {
@@ -395,6 +404,13 @@ webviewApi.onMessage(function (msg) {
       appendToMessages(card);
     }
     scrollToBottom();
+  } else if (m.name === 'questionGone') {
+    var goneCard = document.querySelector('.cc-question-card[data-request-id="' + m.requestId + '"]');
+    if (goneCard) {
+      var goneBtns = goneCard.querySelectorAll('.cc-q-option');
+      for (var gb = 0; gb < goneBtns.length; gb++) goneBtns[gb].disabled = true;
+      goneCard.classList.add('cc-q-answered');
+    }
   } else if (m.name === 'toolUse') {
     endStreamBubble();
     addToolChip('⚙ ' + m.tool);

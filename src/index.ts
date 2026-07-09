@@ -218,6 +218,18 @@ joplin.plugins.register({
         },
       },
       {
+        name: 'ask_user',
+        description: 'Ask the user ONE multiple-choice question and wait for their answer. Renders clickable option buttons in the chat panel. Use this whenever you need the user to pick between alternatives before proceeding. Returns the chosen option text.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            question: { type: 'string', description: 'The question to ask' },
+            options: { type: 'array', items: { type: 'string' }, description: '2-6 short option labels' },
+          },
+          required: ['question', 'options'],
+        },
+      },
+      {
         name: 'approval_prompt',
         description: 'INTERNAL: permission prompt bridge for the Claude Code permission system. Not for direct use.',
         inputSchema: {
@@ -246,6 +258,24 @@ joplin.plugins.register({
     /* ---------- write confirmation ---------- */
     const pendingConfirms: { [id: string]: PendingConfirm } = {};
     let confirmSeq = 0;
+
+    // ask_user tool: blocks the tool call until the user clicks an option
+    // in the panel (or the 5-minute timeout fires).
+    const pendingQuestions: { [id: string]: { resolve: (v: string) => void; timer: any } } = {};
+    let questionSeq = 0;
+
+    function requestAnswer(question: string, options: string[]): Promise<string> {
+      return new Promise((resolve) => {
+        const id = 'q' + String(++questionSeq);
+        const timer = setTimeout(() => {
+          delete pendingQuestions[id];
+          post({ name: 'questionGone', requestId: id });
+          resolve('');
+        }, 300000);
+        pendingQuestions[id] = { resolve, timer };
+        post({ name: 'userQuestion', requestId: id, questions: [{ question, options }] });
+      });
+    }
 
     // "Always allow (this session)" grants, keyed per request kind (e.g.
     // "update_note" or "tool:Bash"). Cleared on new session / restart.
@@ -300,6 +330,17 @@ joplin.plugins.register({
           const ok = await requestConfirm(summary, name);
           if (!ok) return { result: 'The user DECLINED this operation. Do not retry it; ask the user what they would like instead.', isError: true };
         }
+      }
+
+      if (name === 'ask_user') {
+        const options = Array.isArray(args.options) ? args.options.map((o: any) => String(o)).slice(0, 6) : [];
+        if (!args.question || options.length < 2) {
+          return { result: 'ask_user requires a question and at least 2 options.', isError: true };
+        }
+        const answer = await requestAnswer(String(args.question), options);
+        if (!answer) return { result: 'The user did not answer within the time limit.', isError: true };
+        record('tool', 'ask_user: ' + args.question + ' -> ' + answer);
+        return { result: answer };
       }
 
       // Dynamic permission bridge: Claude Code calls this (via
@@ -535,7 +576,8 @@ joplin.plugins.register({
         + 'Use the mcp__joplin tools to read, search, create and edit the user\'s notes and notebooks. '
         + 'Note bodies are Markdown. When editing a note, read it first and provide the full new body. '
         + 'Write operations may require user approval; if one is declined, do not retry it. '
-        + 'The AskUserQuestion tool does NOT work in this embedded panel - when you need to ask the user something, ask directly in your text reply.'
+        + 'To ask the user a multiple-choice question, use the mcp__joplin__ask_user tool - it renders clickable buttons in the panel and waits for the answer. '
+        + 'The built-in AskUserQuestion tool does NOT work in this environment; never use it.'
         + noteContext;
 
       const extraTools = String((await joplin.settings.value('extraAllowedTools')) || '')
@@ -722,6 +764,13 @@ joplin.plugins.register({
           pendingAttachments = pendingAttachments.filter((a) => a.id !== msg.id);
         }
         post({ name: 'attachmentRemoved', id: msg.id });
+      } else if (msg.name === 'questionAnswer') {
+        const pendingQ = pendingQuestions[msg.requestId];
+        if (pendingQ) {
+          clearTimeout(pendingQ.timer);
+          delete pendingQuestions[msg.requestId];
+          pendingQ.resolve(String(msg.value || ''));
+        }
       } else if (msg.name === 'confirmResult') {
         const pending = pendingConfirms[msg.requestId];
         if (pending) {

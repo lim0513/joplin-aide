@@ -235,6 +235,12 @@
 .cc-q-option:hover:not(:disabled) { background: rgba(74, 156, 245, 0.2); }
 .cc-q-option:disabled { opacity: 0.45; cursor: default; }
 .cc-q-answered { opacity: 0.7; }
+.cc-q-chosen {
+  background: var(--joplin-selected-color, #4a9cf5) !important;
+  color: #fff !important;
+  border-color: transparent !important;
+  opacity: 1 !important;
+}
 
 /* ---- attachment chips ---- */
 #cc-attachments {
