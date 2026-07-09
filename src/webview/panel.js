@@ -98,6 +98,26 @@ document.addEventListener('click', function (e) {
   if (!t) return;
   if (t.id === 'cc-send') { sendCurrent(); return; }
   if (t.id === 'cc-stop') { postMsg({ name: 'stop' }); return; }
+  if (t.id === 'cc-history') {
+    var ov = el('cc-history-overlay');
+    if (ov) { ov.remove(); return; }
+    postMsg({ name: 'listHistory' });
+    return;
+  }
+  var histDel = t.closest ? t.closest('.cc-hist-del') : null;
+  if (histDel) {
+    postMsg({ name: 'deleteConversation', id: histDel.dataset.id });
+    return;
+  }
+  var histItem = t.closest ? t.closest('.cc-hist-item') : null;
+  if (histItem) {
+    postMsg({ name: 'loadConversation', id: histItem.dataset.id });
+    return;
+  }
+  if (t.id === 'cc-history-overlay') {
+    t.remove();
+    return;
+  }
   if (t.id === 'cc-new') {
     postMsg({ name: 'newSession' });
     var m = el('cc-messages');
@@ -126,7 +146,48 @@ webviewApi.onMessage(function (msg) {
   if (!msg || !msg.message) return;
   var m = msg.message;
 
-  if (m.name === 'noteContext') {
+  if (m.name === 'historyList') {
+    var old2 = el('cc-history-overlay');
+    if (old2) old2.remove();
+    var overlay = document.createElement('div');
+    overlay.id = 'cc-history-overlay';
+    var box = document.createElement('div');
+    box.className = 'cc-hist-box';
+    if (!m.items || !m.items.length) {
+      box.innerHTML = '<div class="cc-hist-empty">No history yet</div>';
+    } else {
+      for (var i = 0; i < m.items.length; i++) {
+        var it = m.items[i];
+        var d = it.updated ? new Date(it.updated) : null;
+        var when = d ? (d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2) + ' ' + ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2)) : '';
+        var row = document.createElement('div');
+        row.className = 'cc-hist-item';
+        row.dataset.id = it.id;
+        row.innerHTML = '<div class="cc-hist-main"><div class="cc-hist-title">' + escapeHtml(it.title) + '</div>'
+          + '<div class="cc-hist-date">' + when + '</div></div>'
+          + '<button class="cc-hist-del" data-id="' + it.id + '" title="Delete">&#x2715;</button>';
+        box.appendChild(row);
+      }
+    }
+    overlay.appendChild(box);
+    document.getElementById('claude-root').appendChild(overlay);
+  } else if (m.name === 'conversationLoaded') {
+    var ov3 = el('cc-history-overlay');
+    if (ov3) ov3.remove();
+    var mm = el('cc-messages');
+    if (mm) mm.innerHTML = '';
+    var cf = el('cc-confirm');
+    if (cf) cf.innerHTML = '';
+    var msgs = m.messages || [];
+    for (var j = 0; j < msgs.length; j++) {
+      var one = msgs[j];
+      if (one.role === 'user') addBubble('cc-user', escapeHtml(one.text).replace(/\n/g, '<br>'));
+      else if (one.role === 'assistant') addBubble('cc-assistant', renderLite(one.text));
+      else if (one.role === 'tool') addToolChip('\u2699 ' + one.text);
+      else addBubble('cc-error', escapeHtml(one.text));
+    }
+    setBusy(false);
+  } else if (m.name === 'noteContext') {
     var nc = el('cc-note-context');
     if (nc) nc.textContent = m.title ? '\uD83D\uDCC4 ' + m.title : '';
   } else if (m.name === 'assistantText') {

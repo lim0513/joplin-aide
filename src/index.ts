@@ -68,6 +68,7 @@ joplin.plugins.register({
       '<div id="claude-root">',
       '  <div class="cc-header"><span class="cc-title">Claude</span>',
       '    <span id="cc-note-context" class="cc-note-context"></span>',
+      '    <button id="cc-history" title="History">&#x1F550;</button>',
       '    <button id="cc-new" title="New conversation">&#x2795;</button>',
       '  </div>',
       '  <div id="cc-messages"></div>',
@@ -354,6 +355,52 @@ joplin.plugins.register({
       },
     }, null, 2), 'utf8');
 
+    /* ---------- conversation history (persisted to dataDir) ---------- */
+    const historyPath = nodePath.join(dataDir, 'conversations.json');
+    let conversations: any[] = [];
+    try {
+      conversations = JSON.parse(nodeFs.readFileSync(historyPath, 'utf8'));
+      if (!Array.isArray(conversations)) conversations = [];
+    } catch (_) { conversations = []; }
+
+    let currentConv: any = null;
+    let historySaveTimer: any = null;
+
+    function saveHistory(): void {
+      if (historySaveTimer) clearTimeout(historySaveTimer);
+      historySaveTimer = setTimeout(() => {
+        historySaveTimer = null;
+        try {
+          // keep the most recent 100 conversations
+          conversations.sort((a, b) => (b.updated || 0) - (a.updated || 0));
+          if (conversations.length > 100) conversations.length = 100;
+          nodeFs.writeFileSync(historyPath, JSON.stringify(conversations), 'utf8');
+        } catch (err) {
+          console.error('Joplin Claude: failed to save history', err);
+        }
+      }, 400);
+    }
+
+    function record(role: string, text: string): void {
+      if (!currentConv) {
+        currentConv = {
+          id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+          title: '',
+          sessionId: '',
+          messages: [],
+          updated: Date.now(),
+        };
+        conversations.push(currentConv);
+      }
+      if (role === 'user' && !currentConv.title) {
+        currentConv.title = text.slice(0, 60);
+      }
+      currentConv.messages.push({ role, text });
+      currentConv.updated = Date.now();
+      if (sessionId) currentConv.sessionId = sessionId;
+      saveHistory();
+    }
+
     /* ---------- claude process management ---------- */
     let child: any = null;
     let sessionId: string = '';
@@ -397,6 +444,7 @@ joplin.plugins.register({
       if (model) { args.push('--model', winQuote(String(model))); }
       if (extraArgs) { args.push(extraArgs); }
 
+      record('user', prompt);
       post({ name: 'busy', busy: true });
       try {
         child = nodeChildProcess.spawn(claudePath, args, {
@@ -445,12 +493,19 @@ joplin.plugins.register({
       try { ev = JSON.parse(line); } catch (_) { return; }
       if (ev.session_id) sessionId = ev.session_id;
 
+      if (currentConv && sessionId && currentConv.sessionId !== sessionId) {
+        currentConv.sessionId = sessionId;
+        saveHistory();
+      }
+
       if (ev.type === 'assistant' && ev.message && Array.isArray(ev.message.content)) {
         for (const block of ev.message.content) {
           if (block.type === 'text' && block.text) {
+            record('assistant', block.text);
             post({ name: 'assistantText', text: block.text });
           } else if (block.type === 'tool_use') {
             const shortName = String(block.name || '').replace(/^mcp__joplin__/, '');
+            record('tool', shortName);
             post({ name: 'toolUse', tool: shortName });
           }
         }
@@ -470,7 +525,31 @@ joplin.plugins.register({
         if (child) { try { child.kill(); } catch (_) {} }
       } else if (msg.name === 'newSession') {
         sessionId = '';
+        currentConv = null;
         if (child) { try { child.kill(); } catch (_) {} }
+      } else if (msg.name === 'listHistory') {
+        const items = conversations
+          .slice()
+          .sort((a, b) => (b.updated || 0) - (a.updated || 0))
+          .map((c) => ({ id: c.id, title: c.title || '(empty)', updated: c.updated }));
+        post({ name: 'historyList', items });
+      } else if (msg.name === 'loadConversation') {
+        const conv = conversations.find((c) => c.id === msg.id);
+        if (conv) {
+          if (child) { try { child.kill(); } catch (_) {} }
+          currentConv = conv;
+          sessionId = conv.sessionId || '';
+          post({ name: 'conversationLoaded', messages: conv.messages || [] });
+        }
+      } else if (msg.name === 'deleteConversation') {
+        conversations = conversations.filter((c) => c.id !== msg.id);
+        if (currentConv && currentConv.id === msg.id) { currentConv = null; sessionId = ''; }
+        saveHistory();
+        const items = conversations
+          .slice()
+          .sort((a, b) => (b.updated || 0) - (a.updated || 0))
+          .map((c) => ({ id: c.id, title: c.title || '(empty)', updated: c.updated }));
+        post({ name: 'historyList', items });
       } else if (msg.name === 'confirmResult') {
         const pending = pendingConfirms[msg.requestId];
         if (pending) {
