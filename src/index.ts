@@ -63,8 +63,15 @@ joplin.plugins.register({
       },
       'claudeModel': {
         section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
-        label: 'Model (optional)',
+        label: 'Claude model (optional)',
         description: 'Passed as --model. Leave empty to use the CLI default.',
+      },
+      // Key kept as 'extraCliArgs' so values set before the split carry over
+      // (it always applied to claude only in practice).
+      'extraCliArgs': {
+        section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
+        label: 'Claude extra CLI arguments',
+        description: 'Advanced: appended verbatim to the claude command line.',
       },
       'copilotPath': {
         section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
@@ -76,6 +83,11 @@ joplin.plugins.register({
         section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
         label: 'Copilot model (optional)',
         description: 'Passed as --model to the Copilot CLI. Leave empty for automatic model selection.',
+      },
+      'copilotExtraArgs': {
+        section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
+        label: 'Copilot extra CLI arguments',
+        description: 'Advanced: appended verbatim to the copilot command line.',
       },
       'requireWriteConfirm': {
         section: 'joplinAide', type: SETTING_BOOL, value: true, public: true, advanced: true,
@@ -91,11 +103,6 @@ joplin.plugins.register({
         section: 'joplinAide', type: SETTING_STRING, value: 'WebSearch,WebFetch,Read', public: true, advanced: true,
         label: 'Additional allowed Claude tools',
         description: 'Comma-separated Claude Code tools to auto-allow besides the Joplin note tools. Tools NOT listed here trigger an Approve/Decline card in the chat panel. Default: WebSearch,WebFetch,Read (Read is needed to view chat and note attachments without prompting).',
-      },
-      'extraCliArgs': {
-        section: 'joplinAide', type: SETTING_STRING, value: '', public: true, advanced: true,
-        label: 'Extra CLI arguments',
-        description: 'Advanced: appended verbatim to the claude command line.',
       },
     });
 
@@ -763,7 +770,8 @@ joplin.plugins.register({
       if (lastBackend && lastBackend !== backend) { sessionId = ''; sessionAllowed = {}; }
       lastBackend = backend;
 
-      const extraArgs = String((await joplin.settings.value('extraCliArgs')) || '').trim();
+      const extraArgs = String((await joplin.settings.value(
+        backend === 'copilot' ? 'copilotExtraArgs' : 'extraCliArgs')) || '').trim();
 
       let noteContext = '';
       try {
