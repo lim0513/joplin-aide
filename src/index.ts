@@ -933,6 +933,14 @@ joplin.plugins.register({
           }
         }
       } else if (ev.type === 'result') {
+        // Errors that end the turn WITHOUT a nonzero exit code (usage limit
+        // reached, invalid API key, overloaded...) arrive here as is_error +
+        // a text payload. Surface the text or the turn just silently stops.
+        if (ev.is_error === true) {
+          const errText = typeof ev.result === 'string' && ev.result
+            ? ev.result : (ev.subtype ? String(ev.subtype) : 'Request failed.');
+          post({ name: 'error', text: errText.slice(0, 500) });
+        }
         post({ name: 'turnDone', isError: ev.is_error === true, costUsd: ev.total_cost_usd });
       }
     }
@@ -954,6 +962,12 @@ joplin.plugins.register({
             currentConv.sessionId = sessionId;
             saveHistory();
           }
+        }
+        // Nonzero exit without a preceding error event (e.g. quota/billing
+        // rejections): show something rather than ending silently. stderr
+        // details, when present, are appended by the close handler.
+        if (ev.exitCode !== 0) {
+          post({ name: 'error', text: 'copilot finished with exit code ' + ev.exitCode });
         }
         post({ name: 'turnDone', isError: ev.exitCode !== 0 });
         return;
