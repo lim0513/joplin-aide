@@ -838,6 +838,13 @@ joplin.plugins.register({
           '--additional-mcp-config', winQuote('@' + mcpConfigCopilotPath),
           '--allow-tool', 'joplin',
         ];
+        // AUTO MODE parity: Claude's approval_prompt auto-approves every
+        // dynamic request, but Copilot has no prompt - unallowed tools are
+        // hard-denied by the CLI. Passing --allow-all-tools makes AUTO MODE
+        // mean the same thing on both backends.
+        if ((await joplin.settings.value('autoApproveAll')) === true) {
+          args.push('--allow-all-tools');
+        }
         // Checkbox toggles + free-text patterns, de-duplicated.
         const copilotTools: string[] = [];
         if ((await joplin.settings.value('copilotAllowUrl')) !== false) copilotTools.push('url');
