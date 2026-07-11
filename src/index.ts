@@ -684,18 +684,33 @@ joplin.plugins.register({
     let currentConv: any = null;
     let historySaveTimer: any = null;
 
+    // Async, non-overlapping write: writeFileSync blocked the plugin thread
+    // for tens of ms once the file grew to a few MB - felt as a hitch at the
+    // end of every turn. If a save is requested while one is in flight, it
+    // runs again right after (last write wins, no interleaving).
+    let historyWriting = false;
+    let historyDirty = false;
+    async function flushHistory(): Promise<void> {
+      if (historyWriting) { historyDirty = true; return; }
+      historyWriting = true;
+      try {
+        do {
+          historyDirty = false;
+          conversations.sort((a, b) => (b.updated || 0) - (a.updated || 0));
+          if (conversations.length > 100) conversations.length = 100;
+          await nodeFs.promises.writeFile(historyPath, JSON.stringify(conversations), 'utf8');
+        } while (historyDirty);
+      } catch (err) {
+        console.error('Joplin Aide: failed to save history', err);
+      } finally {
+        historyWriting = false;
+      }
+    }
     function saveHistory(): void {
       if (historySaveTimer) clearTimeout(historySaveTimer);
       historySaveTimer = setTimeout(() => {
         historySaveTimer = null;
-        try {
-          // keep the most recent 100 conversations
-          conversations.sort((a, b) => (b.updated || 0) - (a.updated || 0));
-          if (conversations.length > 100) conversations.length = 100;
-          nodeFs.writeFileSync(historyPath, JSON.stringify(conversations), 'utf8');
-        } catch (err) {
-          console.error('Joplin Aide: failed to save history', err);
-        }
+        flushHistory();
       }, 400);
     }
 
@@ -714,6 +729,11 @@ joplin.plugins.register({
         currentConv.title = text.slice(0, 60);
       }
       currentConv.messages.push({ role, text });
+      // Conversations are capped at 100, but a single one could grow without
+      // bound - keep the most recent 300 entries.
+      if (currentConv.messages.length > 300) {
+        currentConv.messages.splice(0, currentConv.messages.length - 300);
+      }
       currentConv.updated = Date.now();
       if (sessionId) currentConv.sessionId = sessionId;
       saveHistory();

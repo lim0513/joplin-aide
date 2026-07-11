@@ -233,6 +233,14 @@ document.addEventListener('click', function (e) {
   }
   if (t.id === 'cc-send') { sendCurrent(); return; }
   if (t.id === 'cc-backend') { postMsg({ name: 'toggleBackend' }); return; }
+  if (t.id === 'cc-load-earlier') {
+    var lm = el('cc-messages');
+    var prevH = lm ? lm.scrollHeight : 0;
+    renderHistoryChunk();
+    // keep the viewport anchored on what the user was reading
+    if (lm) lm.scrollTop += lm.scrollHeight - prevH;
+    return;
+  }
   if (t.id === 'cc-attach') {
     var fi = el('cc-file');
     if (fi) fi.click();
@@ -312,6 +320,48 @@ document.addEventListener('keydown', function (e) {
   }
 });
 
+// ---- chunked history rendering ----
+var _histMsgs = null; // full transcript of the loaded conversation
+var _histShown = 0;   // how many entries from the tail are in the DOM
+
+function buildMsgNode(one) {
+  var div = document.createElement('div');
+  if (one.role === 'user') { div.className = 'cc-msg cc-user'; div.innerHTML = escapeHtml(one.text).replace(/\n/g, '<br>'); }
+  else if (one.role === 'assistant') { div.className = 'cc-msg cc-assistant'; div.innerHTML = renderLite(one.text); }
+  else if (one.role === 'tool') {
+    div.className = 'cc-tools';
+    var chip = document.createElement('span');
+    chip.className = 'cc-tool-chip';
+    chip.textContent = '⚙ ' + one.text;
+    div.appendChild(chip);
+  } else { div.className = 'cc-msg cc-error'; div.innerHTML = escapeHtml(one.text); }
+  return div;
+}
+
+// Renders the next older chunk (newest chunk first call). Keeps a
+// "show earlier" button pinned above the oldest rendered entry.
+function renderHistoryChunk() {
+  var m = el('cc-messages');
+  if (!m || !_histMsgs) return;
+  var CHUNK = 100;
+  var end = _histMsgs.length - _histShown;
+  var start = Math.max(0, end - CHUNK);
+  var oldBtn = document.getElementById('cc-load-earlier');
+  if (oldBtn) oldBtn.remove();
+  var frag = document.createDocumentFragment();
+  for (var i = start; i < end; i++) frag.appendChild(buildMsgNode(_histMsgs[i]));
+  var anchor = m.firstChild;
+  if (start > 0) {
+    var btn = document.createElement('button');
+    btn.id = 'cc-load-earlier';
+    btn.textContent = T('loadEarlier').replace('{n}', String(start));
+    m.insertBefore(btn, m.firstChild);
+    anchor = btn.nextSibling;
+  }
+  m.insertBefore(frag, anchor);
+  _histShown += (end - start);
+}
+
 // Live streaming bubble state (token-level deltas)
 var _streamBubble = null;
 var _streamRaw = '';
@@ -370,14 +420,13 @@ webviewApi.onMessage(function (msg) {
     if (mm) mm.innerHTML = '';
     var cf = el('cc-confirm');
     if (cf) cf.innerHTML = '';
-    var msgs = m.messages || [];
-    for (var j = 0; j < msgs.length; j++) {
-      var one = msgs[j];
-      if (one.role === 'user') addBubble('cc-user', escapeHtml(one.text).replace(/\n/g, '<br>'));
-      else if (one.role === 'assistant') addBubble('cc-assistant', renderLite(one.text));
-      else if (one.role === 'tool') addToolChip('\u2699 ' + one.text);
-      else addBubble('cc-error', escapeHtml(one.text));
-    }
+    // Long transcripts: render only the newest chunk; a button at the top
+    // reveals earlier chunks on demand (building the whole DOM at once
+    // visibly froze the panel).
+    _histMsgs = m.messages || [];
+    _histShown = 0;
+    renderHistoryChunk();
+    scrollToBottom();
     setBusy(false);
   } else if (m.name === 'attached') {
     var attWrap = el('cc-attachments');
