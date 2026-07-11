@@ -1,7 +1,7 @@
 {
   "name": "joplin-plugin-aide",
-  "version": "1.0.0",
-  "description": "Chat with Claude inside Joplin - Claude can read, search, create and edit your notes (powered by your local Claude Code CLI)",
+  "version": "1.0.1",
+  "description": "AI assistant chat panel for Joplin - read, search and edit notes via Claude Code or GitHub Copilot CLI, with per-write confirmation",
   "author": "lim0513",
   "homepage": "https://github.com/lim0513/joplin-aide",
   "repository": {
@@ -18,7 +18,8 @@
     "claude",
     "ai",
     "assistant",
-    "chat"
+    "chat",
+    "copilot"
   ],
   "license": "MIT",
   "devDependencies": {
