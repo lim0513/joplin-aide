@@ -135,7 +135,7 @@ function sendText(text) {
   text = String(text || '').trim();
   if (!text) return;
   setBusy(true);
-  addBubble('cc-user', escapeHtml(text).replace(/\n/g, '<br>'));
+  attachMsgFooter(addBubble('cc-user', escapeHtml(text).replace(/\n/g, '<br>')), text, Date.now());
   postMsg({ name: 'send', text: text });
 }
 
@@ -156,7 +156,7 @@ function sendCurrent() {
     for (var ci = 0; ci < chips.length; ci++) names.push(escapeHtml(chips[ci].dataset.name || ''));
     bubbleHtml += '<div class="cc-msg-atts">\uD83D\uDCCE ' + names.join(' \u00B7 ') + '</div>';
   }
-  addBubble('cc-user', bubbleHtml);
+  attachMsgFooter(addBubble('cc-user', bubbleHtml), text, Date.now());
   postMsg({ name: 'send', text: text });
 }
 
@@ -232,6 +232,26 @@ document.addEventListener('click', function (e) {
   if (link) {
     e.preventDefault();
     postMsg({ name: 'openUrl', url: link.getAttribute('href') });
+    return;
+  }
+  var copyBtn = t.closest ? t.closest('.cc-copy') : null;
+  if (copyBtn) {
+    var copyWrap = copyBtn.closest('.cc-msg-wrap');
+    var copyBubble = copyWrap ? copyWrap.querySelector('.cc-msg') : null;
+    var rawText = copyBubble && copyBubble._ccRaw ? copyBubble._ccRaw : (copyBubble ? copyBubble.innerText : '');
+    var flashDone = function() {
+      copyBtn.innerHTML = CC_CHECK_SVG;
+      setTimeout(function() { copyBtn.innerHTML = CC_COPY_SVG; }, 1200);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(rawText).then(flashDone, function() {
+        postMsg({ name: 'copyText', text: rawText });
+        flashDone();
+      });
+    } else {
+      postMsg({ name: 'copyText', text: rawText });
+      flashDone();
+    }
     return;
   }
   if (t.id === 'cc-send') { sendCurrent(); return; }
@@ -322,10 +342,67 @@ var _histConvId = '';    // conversation the archive segments belong to
 var _histSegNext = -1;   // next archive segment to fetch (newest first), -1 = none
 var _histFetching = false;
 
+function fmtMsgTime(ts) {
+  if (!ts) return '';
+  var d = new Date(ts);
+  var now = new Date();
+  var hm = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+  if (d.toDateString() === now.toDateString()) return hm;
+  return (d.getMonth() + 1) + '-' + d.getDate() + ' ' + hm;
+}
+
+// Copy / check icons for the hover footer (Claude-desktop style).
+var CC_COPY_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+var CC_CHECK_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+
+// Hover footer BELOW the bubble (outside it, Claude-desktop style): the
+// bubble is moved into a .cc-msg-wrap and the footer (borderless icon
+// button + time) sits under it, revealed on hover of the whole wrap.
+// The raw text rides the bubble as a JS property (not an attribute) so
+// big messages don't bloat the DOM. Returns the wrap so callers building
+// detached nodes can insert it instead of the bare bubble.
+function attachMsgFooter(bubble, rawText, ts) {
+  if (!bubble) return bubble;
+  bubble._ccRaw = rawText;
+  var p = bubble.parentElement;
+  var wrap = (p && p.classList && p.classList.contains('cc-msg-wrap')) ? p : null;
+  if (!wrap) {
+    wrap = document.createElement('div');
+    wrap.className = 'cc-msg-wrap ' + (bubble.classList.contains('cc-user') ? 'cc-wrap-user' : 'cc-wrap-assistant');
+    if (p) p.insertBefore(wrap, bubble); // take the bubble's place in the list
+    wrap.appendChild(bubble);
+  }
+  var old = wrap.querySelector('.cc-msg-footer');
+  if (old) old.remove();
+  var foot = document.createElement('div');
+  foot.className = 'cc-msg-footer';
+  var btn = document.createElement('button');
+  btn.className = 'cc-copy';
+  btn.title = T('titleCopy');
+  btn.innerHTML = CC_COPY_SVG;
+  foot.appendChild(btn);
+  var when = fmtMsgTime(ts);
+  if (when) {
+    var timeEl = document.createElement('span');
+    timeEl.className = 'cc-msg-time';
+    timeEl.textContent = when;
+    foot.appendChild(timeEl);
+  }
+  wrap.appendChild(foot);
+  return wrap;
+}
+
 function buildMsgNode(one) {
   var div = document.createElement('div');
-  if (one.role === 'user') { div.className = 'cc-msg cc-user'; div.innerHTML = escapeHtml(one.text).replace(/\n/g, '<br>'); }
-  else if (one.role === 'assistant') { div.className = 'cc-msg cc-assistant'; div.innerHTML = renderLite(one.text); }
+  if (one.role === 'user') {
+    div.className = 'cc-msg cc-user';
+    div.innerHTML = escapeHtml(one.text).replace(/\n/g, '<br>');
+    return attachMsgFooter(div, one.text, one.ts);
+  } else if (one.role === 'assistant') {
+    div.className = 'cc-msg cc-assistant';
+    div.innerHTML = renderLite(one.text);
+    return attachMsgFooter(div, one.text, one.ts);
+  }
   else if (one.role === 'tool') {
     div.className = 'cc-tools';
     var chip = document.createElement('span');
@@ -497,10 +574,11 @@ webviewApi.onMessage(function (msg) {
     // otherwise plain append (fallback when deltas are unavailable).
     if (_streamBubble) {
       _streamBubble.innerHTML = renderLite(m.text);
+      attachMsgFooter(_streamBubble, m.text, Date.now());
       endStreamBubble();
       scrollToBottom();
     } else {
-      addBubble('cc-assistant', renderLite(m.text));
+      attachMsgFooter(addBubble('cc-assistant', renderLite(m.text)), m.text, Date.now());
     }
   } else if (m.name === 'userQuestion') {
     endStreamBubble();

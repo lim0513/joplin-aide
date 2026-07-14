@@ -63,6 +63,45 @@
 #cc-backend.cc-backend-copilot {
   border-color: rgba(88, 166, 255, 0.55);
 }
+/* Hover footer BELOW the bubble (Claude-desktop style): the bubble lives
+   inside .cc-msg-wrap; a borderless icon button + time appear under it on
+   hover of the whole wrap. */
+.cc-msg-wrap {
+  display: flex;
+  flex-direction: column;
+  max-width: 92%;
+}
+.cc-wrap-user { align-self: flex-end; align-items: flex-end; }
+.cc-wrap-assistant { align-self: flex-start; align-items: flex-start; }
+.cc-msg-wrap .cc-msg { max-width: 100%; }
+.cc-msg-footer {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  padding: 0 2px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.cc-msg-wrap:hover .cc-msg-footer { opacity: 1; }
+.cc-copy {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  color: var(--joplin-color-faded, #999);
+  cursor: pointer;
+  padding: 3px 4px;
+  line-height: 1;
+}
+.cc-copy:hover { background: rgba(127, 127, 127, 0.18); color: inherit; }
+.cc-msg-time {
+  font-size: 10px;
+  color: var(--joplin-color-faded, #999);
+}
+
 /* One line per backend-switch notice */
 .cc-switch-note {
   align-self: center;

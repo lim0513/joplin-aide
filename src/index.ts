@@ -740,7 +740,7 @@ joplin.plugins.register({
       if (role === 'user' && !currentConv.title) {
         currentConv.title = text.slice(0, 60);
       }
-      currentConv.messages.push({ role, text });
+      currentConv.messages.push({ role, text, ts: Date.now() });
       // Nothing is discarded: when a conversation exceeds 2 segments worth
       // of entries, the oldest SEGMENT of them spills into its own archive
       // file. conversations.json stays small; archives load on scroll-up.
@@ -1158,6 +1158,9 @@ joplin.plugins.register({
           await joplin.settings.setValue('backend', next);
           post({ name: 'backendState', backend: next, switched: true });
         }
+      } else if (msg.name === 'copyText') {
+        // Clipboard fallback for webviews where navigator.clipboard fails.
+        try { await (joplin as any).clipboard.writeText(String(msg.text || '')); } catch (_) {}
       } else if (msg.name === 'stop') {
         killChild();
       } else if (msg.name === 'newSession') {
