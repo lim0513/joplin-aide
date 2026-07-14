@@ -48,66 +48,69 @@ joplin.plugins.register({
       iconName: 'fas fa-robot',
     });
     await joplin.settings.registerSettings({
+      // Labels/descriptions come from i18n, resolved from the app locale at
+      // registration time (language switches show after the app restart
+      // Joplin already requires).
       'backend': {
         section: 'joplinAide', type: SETTING_STRING, value: 'claude', public: true,
         isEnum: true,
         options: { claude: 'Claude Code', copilot: 'GitHub Copilot' },
-        label: 'AI backend',
-        description: 'Which local CLI powers the chat. Each must be installed and logged in on its own (claude / copilot). Switching backends starts a new session.',
+        label: t.sBackend,
+        description: t.sBackendDesc,
       },
       'requireWriteConfirm': {
         section: 'joplinAide', type: SETTING_BOOL, value: true, public: true,
-        label: 'Confirm before the AI modifies notes',
-        description: 'Create/update/delete operations wait for your approval in the chat panel. Applies to both backends.',
+        label: t.sWriteConfirm,
+        description: t.sWriteConfirmDesc,
       },
       'claudePath': {
         section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
         subType: 'file_path', // renders a file picker in the options screen
-        label: '— Claude · CLI path (claude)',
-        description: 'Full path to the claude executable. Leave empty to use "claude" from the system PATH.',
+        label: t.sClaudePath,
+        description: t.sClaudePathDesc,
       },
       'claudeModel': {
         section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
-        label: 'Claude · model (optional)',
-        description: 'Passed as --model. Leave empty to use the CLI default.',
+        label: t.sClaudeModel,
+        description: t.sClaudeModelDesc,
       },
       'extraAllowedTools': {
         section: 'joplinAide', type: SETTING_STRING, value: 'WebSearch,WebFetch,Read', public: true,
-        label: 'Claude · additional allowed tools',
-        description: 'Comma-separated Claude Code tools to auto-allow besides the Joplin note tools. Tools NOT listed here trigger an Approve/Decline card in the chat panel. Default: WebSearch,WebFetch,Read (Read is needed to view chat and note attachments without prompting).',
+        label: t.sClaudeTools,
+        description: t.sClaudeToolsDesc,
       },
       // Key kept as 'extraCliArgs' so values set before the split carry over
       // (it always applied to claude only in practice).
       'extraCliArgs': {
         section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
-        label: 'Claude · extra CLI arguments',
-        description: 'Advanced: appended verbatim to the claude command line.',
+        label: t.sClaudeArgs,
+        description: t.sClaudeArgsDesc,
       },
       'copilotPath': {
         section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
         subType: 'file_path',
-        label: '— Copilot · CLI path (copilot)',
-        description: 'Full path to the copilot executable. Leave empty to use "copilot" from the system PATH.',
+        label: t.sCopilotPath,
+        description: t.sCopilotPathDesc,
       },
       'copilotModel': {
         section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
-        label: 'Copilot · model (optional)',
-        description: 'Passed as --model to the Copilot CLI. Leave empty for automatic model selection.',
+        label: t.sCopilotModel,
+        description: t.sCopilotModelDesc,
       },
       'copilotAllowTools': {
         section: 'joplinAide', type: SETTING_STRING, value: 'url,write', public: true,
-        label: 'Copilot · additional allowed tools',
-        description: 'Comma-separated permission patterns passed as --allow-tool (kinds: url(domain?), write, shell(cmd:*)). Copilot has no approval prompt: anything not listed is denied automatically. Default: url,write (web fetch + local file writes; note edits go through the Joplin tools and confirmation cards regardless). File reads need no entry.',
+        label: t.sCopilotTools,
+        description: t.sCopilotToolsDesc,
       },
       'copilotExtraArgs': {
         section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
-        label: 'Copilot · extra CLI arguments',
-        description: 'Advanced: appended verbatim to the copilot command line.',
+        label: t.sCopilotArgs,
+        description: t.sCopilotArgsDesc,
       },
       'autoApproveAll': {
         section: 'joplinAide', type: SETTING_BOOL, value: false, public: true, advanced: true,
-        label: '\uD83D\uDD34 \u26A0 AUTO MODE \u2014 approve ALL permission requests \u26A0',
-        description: 'DANGER: when enabled, EVERY request is approved automatically without asking - note edits and deletions, AND any tool the AI asks for (potentially including shell commands). The AI gets free rein over your notes. Equivalent to running the CLI with permissions disabled. Leave OFF unless you fully accept the risk.',
+        label: t.sAutoApprove,
+        description: t.sAutoApproveDesc,
       },
     });
 
