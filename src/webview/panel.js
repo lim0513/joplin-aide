@@ -136,6 +136,7 @@ function sendText(text) {
   if (!text) return;
   setBusy(true);
   attachMsgFooter(addBubble('cc-user', escapeHtml(text).replace(/\n/g, '<br>')), text, Date.now());
+  scrollToBottom(); // the footer wrap adds height after addBubble's scroll
   postMsg({ name: 'send', text: text });
 }
 
@@ -157,6 +158,7 @@ function sendCurrent() {
     bubbleHtml += '<div class="cc-msg-atts">\uD83D\uDCCE ' + names.join(' \u00B7 ') + '</div>';
   }
   attachMsgFooter(addBubble('cc-user', bubbleHtml), text, Date.now());
+  scrollToBottom(); // the footer wrap adds height after addBubble's scroll
   postMsg({ name: 'send', text: text });
 }
 
@@ -627,6 +629,7 @@ webviewApi.onMessage(function (msg) {
       scrollToBottom();
     } else {
       attachMsgFooter(addBubble('cc-assistant', renderLite(m.text)), m.text, Date.now());
+      scrollToBottom();
     }
   } else if (m.name === 'userQuestion') {
     endStreamBubble();
