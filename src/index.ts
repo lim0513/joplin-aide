@@ -856,10 +856,12 @@ joplin.plugins.register({
       const toolPrefix = backend === 'copilot' ? 'joplin MCP' : 'mcp__joplin';
       const systemPrompt = 'You are embedded in the Joplin note-taking app as an assistant. '
         + 'Use the ' + toolPrefix + ' tools to read, search, create and edit the user\'s notes and notebooks. '
-        + 'Note bodies are Markdown. When editing a note, read it first and provide the full new body. '
+        + 'Notes live in Joplin\'s database, NOT on disk: NEVER use file tools (Read/Edit/Write) or shell commands on a note, and never treat a note id or title as a file path. Every note operation goes through the ' + toolPrefix + ' tools - going file-first and correcting later wastes the user\'s time. '
+        + 'Note bodies are Markdown. Updating a note replaces the FULL body: read the note first, apply your change to the complete text, then send the entire new body - never a fragment, diff or patch. '
         + 'Write operations may require user approval; if one is declined, do not retry it. '
         + 'To ask the user a multiple-choice question, use the ' + toolPrefix + ' ask_user tool - it renders clickable buttons in the panel and waits for the answer. '
-        + 'Other question mechanisms do NOT work in this environment; never use them.'
+        + 'Other question mechanisms do NOT work in this environment; never use them. '
+        + 'Reply in the language the user writes in.'
         + noteContext;
 
       let bin: string;
