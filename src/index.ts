@@ -692,16 +692,8 @@ joplin.plugins.register({
 
     /* ---------- MCP proxy + config files in dataDir ---------- */
     const dataDir = await joplin.plugins.dataDir();
-
-    // Session diagnostic log (temporary): one line per turn boundary written
-    // to <dataDir>/aide-session.log so we can see whether --resume was passed,
-    // what session id came back, and what the CLI said on a nonzero exit.
-    const sessionLogPath = nodePath.join(dataDir, 'aide-session.log');
-    function diag(msg: string): void {
-      try {
-        nodeFs.appendFileSync(sessionLogPath, '[' + new Date().toISOString() + '] ' + msg + '\n', 'utf8');
-      } catch (_) {}
-    }
+    // Clean up the temporary session-diagnostic log left by the debug build.
+    try { nodeFs.unlinkSync(nodePath.join(dataDir, 'aide-session.log')); } catch (_) {}
 
     const proxyPath = nodePath.join(dataDir, 'joplin-mcp-proxy.cjs');
     nodeFs.writeFileSync(proxyPath, MCP_PROXY_SOURCE, 'utf8');
@@ -1041,13 +1033,6 @@ joplin.plugins.register({
         prompt = '<context>' + systemPrompt + '</context>\n\n' + prompt;
       }
       runBackend = backend;
-      const resumeArg = args.find((a) => typeof a === 'string' && a.indexOf('--resume') === 0);
-      const resumeIdx = args.indexOf('--resume');
-      const resumePassed = !!resumeArg || resumeIdx >= 0;
-      diag('TURN start backend=' + backend + ' resumePassed=' + resumePassed
-        + ' sessionId=' + (sessionId || '(none)')
-        + ' convId=' + (currentConv ? currentConv.id : '(none)')
-        + ' convSessionId=' + (currentConv ? (currentConv.sessionId || '(none)') : '(none)'));
       post({ name: 'busy', busy: true });
       try {
         child = nodeChildProcess.spawn(winQuote(bin), args, {
@@ -1084,14 +1069,11 @@ joplin.plugins.register({
       });
       child.on('close', (code: number) => {
         const stderrText = stderrChunks.length ? decodeOutput(Buffer.concat(stderrChunks)).trim() : '';
-        diag('TURN close code=' + code + ' sessionIdAfter=' + (sessionId || '(none)')
-          + (stderrText ? ' stderr=' + stderrText.slice(0, 300).replace(/\s+/g, ' ') : ''));
         if (code !== 0 && stderrText) {
           post({ name: 'error', text: fmt(t.errExited, { bin, code, err: stderrText.slice(0, 500) }) });
           // The CLI no longer knows this session (cleaned store, foreign id
           // from an old history entry...) - drop it so a retry starts fresh.
           if (/No session, task, or name matched|No conversation found/i.test(stderrText)) {
-            diag('SESSION cleared (CLI did not recognize the id)');
             sessionId = '';
             sessionBackend = '';
           }
@@ -1104,8 +1086,7 @@ joplin.plugins.register({
     function handleClaudeEvent(line: string): void {
       let ev: any;
       try { ev = JSON.parse(line); } catch (_) { return; }
-      if (ev.session_id && ev.session_id !== sessionId) { diag('CLAUDE captured session_id=' + ev.session_id + ' (was ' + (sessionId || 'none') + ')'); sessionId = ev.session_id; }
-      else if (ev.session_id) sessionId = ev.session_id;
+      if (ev.session_id) sessionId = ev.session_id;
 
       if (currentConv && sessionId && currentConv.sessionId !== sessionId) {
         currentConv.sessionId = sessionId;
@@ -1170,7 +1151,6 @@ joplin.plugins.register({
 
       if (type === 'result') {
         if (ev.sessionId) {
-          if (String(ev.sessionId) !== sessionId) diag('COPILOT captured sessionId=' + ev.sessionId + ' (was ' + (sessionId || 'none') + ')');
           sessionId = String(ev.sessionId);
           if (currentConv && currentConv.sessionId !== sessionId) {
             currentConv.sessionId = sessionId;
