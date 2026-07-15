@@ -868,6 +868,14 @@ joplin.plugins.register({
       return '"' + s.replace(/"/g, '\\"') + '"';
     }
 
+    // Defense for anything that rides the command line through shell:true:
+    // cmd.exe truncates at the first newline, silently dropping every later
+    // flag (verified with an argv probe - that's how a multi-line memory
+    // injection ate --resume). Never let a newline reach an argument.
+    function flattenShellArg(s: string): string {
+      return String(s).replace(/\s*\r?\n+\s*/g, ' ');
+    }
+
     // A missing CLI otherwise dies inside cmd.exe with a localized
     // "not recognized as an internal or external command" - GBK-encoded on
     // Chinese Windows, i.e. mojibake in the panel, with no hint what to do.
@@ -921,10 +929,16 @@ joplin.plugins.register({
         if (memBody.length > MEMORY_MAX_CHARS) {
           memBody = memBody.slice(0, MEMORY_MAX_CHARS) + '\n[memory truncated - consolidate this note]';
         }
+        // Newlines are flattened to bullets: on Windows this string ends up
+        // inside a cmd.exe (shell:true) command line, and cmd truncates at
+        // the first newline - silently dropping every LATER flag, including
+        // --resume. That is exactly how enabling memory broke session
+        // continuity in v1.1.6.
+        const memFlat = memBody.replace(/\s*\r?\n+\s*/g, ' • ');
         memoryPrompt = ' PERSISTENT MEMORY: note ' + mem.id + ' is your long-term memory across all conversations. '
           + 'When the user asks you to remember something, or you confirm a stable preference or fact worth keeping, append a single concise bullet to that note (append_to_note). '
           + 'When it grows long or redundant, consolidate it with update_note. Keep entries terse; never store secrets. '
-          + (memBody ? 'Current memory:\n' + memBody : 'The memory note is currently empty.');
+          + (memFlat ? 'Current memory (entries separated by •): ' + memFlat : 'The memory note is currently empty.');
       }
 
       const toolPrefix = backend === 'copilot' ? 'joplin MCP' : 'mcp__joplin';
@@ -981,7 +995,7 @@ joplin.plugins.register({
           '--mcp-config', winQuote(mcpConfigPath),
           '--allowedTools', winQuote(allowedTools),
           '--permission-prompt-tool', 'mcp__joplin__approval_prompt',
-          '--append-system-prompt', winQuote(systemPrompt),
+          '--append-system-prompt', winQuote(flattenShellArg(systemPrompt)),
         ];
         if (sessionId) { args.push('--resume', sessionId); }
         if (model) { args.push('--model', winQuote(String(model))); }
