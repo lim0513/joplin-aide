@@ -16,8 +16,12 @@ Formerly published as *Joplin Claude*.
 - **Interactive questions** — the AI can ask a multiple-choice question mid-task; options render as clickable buttons and your click is returned as the answer
 - **Attachments** — paperclip button, drag & drop, or paste an image straight from the clipboard
 - **Conversation history** — the clock button lists past conversations; loading one restores the transcript and resumes the CLI session
+- **Long-term memory** (opt-in) — the AI keeps preferences and facts you ask it to remember in a regular Joplin note ("Aide Memory"), injected into every new conversation; visible, editable and synced like any other note
+- **Message actions** — hover any message for a copy button and timestamp; hover a user message to restart the conversation from that point (Claude-desktop style)
 - **Uses your existing CLI login** — no API key to manage; requests go through `claude` / `copilot` with your existing subscription
-- **i18n** — English, Simplified Chinese and Japanese (follows Joplin's locale setting)
+- **i18n** — English, Simplified Chinese and Japanese, including the settings screen (follows Joplin's locale setting)
+
+See [ROADMAP.md](ROADMAP.md) for the full feature history and what's planned.
 
 ## How it works
 
@@ -48,7 +52,7 @@ The MCP proxy is a zero-dependency script shipped inside the plugin. The CLI lau
 
 ## Settings
 
-**Tools → Options → Joplin Aide**: AI backend, CLI command/path and model per backend, write-confirmation toggle, extra allowed tools and CLI arguments (advanced).
+**Tools → Options → Joplin Aide**: AI backend, CLI command/path and model per backend, write-confirmation toggle, long-term memory (off by default; note ID and confirmation-skip under advanced), extra allowed tools and CLI arguments (advanced).
 
 ## Development
 
