@@ -107,6 +107,21 @@ joplin.plugins.register({
         label: t.sCopilotArgs,
         description: t.sCopilotArgsDesc,
       },
+      'memoryEnabled': {
+        section: 'joplinAide', type: SETTING_BOOL, value: false, public: true,
+        label: t.sMemory,
+        description: t.sMemoryDesc,
+      },
+      'memoryNoteId': {
+        section: 'joplinAide', type: SETTING_STRING, value: '', public: true, advanced: true,
+        label: t.sMemoryNote,
+        description: t.sMemoryNoteDesc,
+      },
+      'memoryAutoApprove': {
+        section: 'joplinAide', type: SETTING_BOOL, value: true, public: true, advanced: true,
+        label: t.sMemoryAuto,
+        description: t.sMemoryAutoDesc,
+      },
       'autoApproveAll': {
         section: 'joplinAide', type: SETTING_BOOL, value: false, public: true, advanced: true,
         label: t.sAutoApprove,
@@ -457,13 +472,46 @@ joplin.plugins.register({
       return await joplin.data.post(['tags'], null, { title });
     }
 
+    /* ---------- long-term memory (a regular Joplin note) ---------- */
+    // The memory note is injected into the system prompt each session and the
+    // AI updates it with the note tools it already has - no new plumbing.
+    // Stored as a note so it is visible, editable and synced like anything else.
+    let memoryNoteId = '';
+    const MEMORY_MAX_CHARS = 4000;
+
+    async function resolveMemoryNote(): Promise<{ id: string; body: string } | null> {
+      if ((await joplin.settings.value('memoryEnabled')) !== true) { memoryNoteId = ''; return null; }
+      let id = String((await joplin.settings.value('memoryNoteId')) || '').trim();
+      if (id) {
+        try {
+          const n = await joplin.data.get(['notes', id], { fields: ['id', 'body'] });
+          if (n) { memoryNoteId = id; return { id, body: String(n.body || '') }; }
+        } catch (_) { /* note deleted - recreate below */ }
+      }
+      try {
+        const created = await joplin.data.post(['notes'], null, {
+          title: 'Aide Memory',
+          body: '<!-- Joplin Aide long-term memory. The AI appends facts and preferences here; edit or prune freely. -->\n',
+        });
+        id = String(created.id);
+        await joplin.settings.setValue('memoryNoteId', id);
+        memoryNoteId = id;
+        return { id, body: String(created.body || '') };
+      } catch (_) { memoryNoteId = ''; return null; }
+    }
+
     async function executeTool(name: string, args: any): Promise<{ result: any; isError?: boolean }> {
       const def = toolDefs.find((d) => d.name === name);
       if (!def) return { result: 'Unknown tool: ' + name, isError: true };
 
       if (def.write) {
-        const needConfirm = await joplin.settings.value('requireWriteConfirm');
-        if (needConfirm !== false) {
+        // Memory-note updates skip the approval card (opt-out setting) so
+        // remembering things stays frictionless. Deletion still asks.
+        const isMemoryWrite = !!memoryNoteId && args && args.note_id === memoryNoteId
+          && name !== 'delete_note'
+          && (await joplin.settings.value('memoryAutoApprove')) !== false;
+        const needConfirm = (await joplin.settings.value('requireWriteConfirm')) !== false && !isMemoryWrite;
+        if (needConfirm) {
           const summary = def.confirmSummary ? def.confirmSummary(args) : name;
           const ok = await requestConfirm(summary, name);
           if (!ok) return { result: 'The user DECLINED this operation. Do not retry it; ask the user what they would like instead.', isError: true };
@@ -853,6 +901,21 @@ joplin.plugins.register({
         if (sel) noteContext = ' The note currently open in the editor is "' + sel.title + '" (id: ' + sel.id + ').';
       } catch (_) {}
 
+      // Long-term memory: current content rides the system prompt; the AI
+      // maintains the note itself with the ordinary note tools.
+      let memoryPrompt = '';
+      const mem = await resolveMemoryNote();
+      if (mem) {
+        let memBody = mem.body.trim();
+        if (memBody.length > MEMORY_MAX_CHARS) {
+          memBody = memBody.slice(0, MEMORY_MAX_CHARS) + '\n[memory truncated - consolidate this note]';
+        }
+        memoryPrompt = ' PERSISTENT MEMORY: note ' + mem.id + ' is your long-term memory across all conversations. '
+          + 'When the user asks you to remember something, or you confirm a stable preference or fact worth keeping, append a single concise bullet to that note (append_to_note). '
+          + 'When it grows long or redundant, consolidate it with update_note. Keep entries terse; never store secrets. '
+          + (memBody ? 'Current memory:\n' + memBody : 'The memory note is currently empty.');
+      }
+
       const toolPrefix = backend === 'copilot' ? 'joplin MCP' : 'mcp__joplin';
       const systemPrompt = 'You are embedded in the Joplin note-taking app as an assistant. '
         + 'Use the ' + toolPrefix + ' tools to read, search, create and edit the user\'s notes and notebooks. '
@@ -862,7 +925,8 @@ joplin.plugins.register({
         + 'To ask the user a multiple-choice question, use the ' + toolPrefix + ' ask_user tool - it renders clickable buttons in the panel and waits for the answer. '
         + 'Other question mechanisms do NOT work in this environment; never use them. '
         + 'Reply in the language the user writes in.'
-        + noteContext;
+        + noteContext
+        + memoryPrompt;
 
       let bin: string;
       let args: string[];
