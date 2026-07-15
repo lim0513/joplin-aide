@@ -38,6 +38,9 @@ Current state and direction of **Joplin Aide**, an AI assistant chat panel for J
 - Maintained by the AI itself via the ordinary note tools; capped with a consolidation hint
 - Memory-note updates skip the approval card (configurable); deletion still asks
 
+**Session continuity fix** (v1.1.7)
+- Critical: multi-line memory content in the command line was truncated by cmd.exe on Windows, silently dropping `--resume` - every turn started a fresh session with no context. Memory is now flattened to a single line and a guard keeps newlines out of all CLI arguments
+
 ---
 
 ## 🧭 Ideas / Later
