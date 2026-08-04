@@ -53,6 +53,7 @@ First **CLI-free** backend: instead of shelling out, the plugin talks directly t
 - **Capabilities wired per Moonshot docs** — automatic context caching (`prompt_cache_key`), built-in web search (`$web_search`, toggleable, billed per trigger), vision input (images as base64), and **live reasoning display** for kimi-k3 (chain-of-thought streams into a collapsible "thought process" block)
 - Reuses the existing approval cards, ask_user, long-term memory, history and attachments
 - Groundwork for the future "multiple user-named OpenAI-compatible bots" idea
+- (v1.2.1) Setting to toggle the kimi-k3 reasoning display on/off
 
 ---
 

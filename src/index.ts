@@ -127,6 +127,11 @@ joplin.plugins.register({
         label: t.sKimiWebSearch,
         description: t.sKimiWebSearchDesc,
       },
+      'kimiShowReasoning': {
+        section: 'joplinAide', type: SETTING_BOOL, value: true, public: true,
+        label: t.sKimiShowReasoning,
+        description: t.sKimiShowReasoningDesc,
+      },
       'copilotPath': {
         section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
         subType: 'file_path',
@@ -1129,6 +1134,10 @@ joplin.plugins.register({
         const webSearchOn = (await joplin.settings.value('kimiWebSearch')) === true;
         if (webSearchOn) tools.push({ type: 'builtin_function', function: { name: '$web_search' } });
 
+        // Reasoning models (kimi-k3) always produce chain-of-thought; this only
+        // controls whether it is shown in the panel.
+        const showReasoning = (await joplin.settings.value('kimiShowReasoning')) !== false;
+
         // Stable key so Moonshot reuses the automatic context cache across the
         // turns of one conversation (big input-cost savings on long threads).
         const cacheKey = currentConv ? String(currentConv.id) : undefined;
@@ -1142,6 +1151,7 @@ joplin.plugins.register({
           };
           let startedReasoning = false;
           const onReasoning = (txt: string) => {
+            if (!showReasoning) return;
             if (!startedReasoning) { post({ name: 'reasoningStart' }); startedReasoning = true; }
             post({ name: 'reasoningDelta', text: txt });
           };
