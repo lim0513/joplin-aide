@@ -1,6 +1,6 @@
 # Joplin Aide
 
-An AI assistant chat panel for [Joplin](https://joplinapp.org/) — ask about your notes and let the AI read, search, create and edit them, powered by the CLI you already have: [Claude Code](https://claude.com/claude-code) or [GitHub Copilot CLI](https://github.com/features/copilot/cli).
+An AI assistant chat panel for [Joplin](https://joplinapp.org/) — ask about your notes and let the AI read, search, create and edit them, powered by the CLI you already have ([Claude Code](https://claude.com/claude-code) or [GitHub Copilot CLI](https://github.com/features/copilot/cli)) or the [Kimi (Moonshot)](https://platform.moonshot.cn/) API — no CLI required.
 
 Formerly published as *Joplin Claude*.
 
@@ -9,7 +9,7 @@ Formerly published as *Joplin Claude*.
 
 ## Features
 
-- **Dual backend** — Claude Code or GitHub Copilot CLI; a pill button in the panel header switches engines with one click (the next message starts a fresh session on the new engine)
+- **Multiple backends** — Claude Code or GitHub Copilot CLI, or the **Kimi (Moonshot) API** (no CLI needed); a pill button in the panel header switches engines with one click (the next message starts a fresh session on the new engine). The Kimi backend adds context caching, built-in web search, image input, and live reasoning display for kimi-k3
 - **Chat panel** — streaming replies rendered as full Markdown (headings, tables, code, clickable links), tool-activity chips, and a header showing which note the AI is targeting (updates live as you switch notes)
 - **19 note tools** — list/search/read notes and notebooks, create/update/delete notes, tags, to-dos, note attachments, rich search syntax (`tag:`, `type:todo`, `updated:day-7`, ...)
 - **Write confirmation** — every create/update/delete waits for your Approve/Decline in the panel, with an "Always (this session)" option per request kind; an optional (dangerous, off by default) auto mode approves everything. Enforced server-side, so it applies to both backends

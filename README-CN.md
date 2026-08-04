@@ -1,6 +1,6 @@
 # Joplin Aide
 
-[Joplin](https://joplinapp.org/) 的 AI 助手聊天面板——让 AI 读取、搜索、创建和编辑你的笔记,由你本地已有的 CLI 驱动:[Claude Code](https://claude.com/claude-code) 或 [GitHub Copilot CLI](https://github.com/features/copilot/cli)。
+[Joplin](https://joplinapp.org/) 的 AI 助手聊天面板——让 AI 读取、搜索、创建和编辑你的笔记,由你本地已有的 CLI 驱动([Claude Code](https://claude.com/claude-code) 或 [GitHub Copilot CLI](https://github.com/features/copilot/cli)),或直接用 [Kimi(Moonshot)](https://platform.moonshot.cn/) API——无需任何 CLI。
 
 前身为 *Joplin Claude*。
 
@@ -9,7 +9,7 @@
 
 ## 功能
 
-- **双后端** —— Claude Code 或 GitHub Copilot CLI;面板标题栏的胶囊按钮一键切换引擎(切换后下一条消息自动开新会话)
+- **多后端** —— Claude Code 或 GitHub Copilot CLI,或 **Kimi(Moonshot)API**(无需 CLI);面板标题栏的胶囊按钮一键切换引擎(切换后下一条消息自动开新会话)。Kimi 后端额外支持上下文缓存、内置联网搜索、图片输入,以及 kimi-k3 的思考过程实时显示
 - **聊天面板** —— 流式回复、完整 Markdown 渲染(标题、表格、代码、可点击链接)、工具活动 chip、标题栏实时显示当前操作的笔记
 - **19 个笔记工具** —— 笔记/笔记本的列出、搜索、读取、创建、修改、删除,标签、待办、笔记附件,以及丰富的搜索语法(`tag:`、`type:todo`、`updated:day-7` 等)
 - **写操作确认** —— 每次创建/修改/删除都等待你在面板里允许或拒绝,支持"本会话内一直允许";另有(危险、默认关闭的)全自动模式。确认在插件服务端强制执行,对两个后端同样生效
