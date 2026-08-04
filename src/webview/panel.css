@@ -187,6 +187,30 @@
   align-self: flex-start;
 }
 
+/* ---- reasoning (chain-of-thought) block ---- */
+.cc-reasoning {
+  align-self: stretch;
+  margin: 2px 0 4px;
+  border-left: 2px solid rgba(127, 127, 127, 0.3);
+  padding-left: 8px;
+}
+.cc-reasoning > summary {
+  font-size: 11px;
+  color: var(--joplin-color-faded, #999);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.cc-reasoning > summary::-webkit-details-marker { display: none; }
+.cc-reasoning-body {
+  font-size: 12px;
+  color: var(--joplin-color-faded, #999);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-top: 4px;
+  opacity: 0.85;
+}
+
 #cc-confirm { flex-shrink: 0; padding: 0 10px; }
 .cc-confirm-card {
   border: 1px solid rgba(230, 180, 60, 0.6);

@@ -43,6 +43,19 @@ Current state and direction of **Joplin Aide**, an AI assistant chat panel for J
 
 ---
 
+## ✅ Kimi (Moonshot) API backend (v1.2.0)
+
+First **CLI-free** backend: instead of shelling out, the plugin talks directly to Moonshot's OpenAI-compatible API and runs its own in-process agentic loop.
+
+- **In-process engine** — streaming SSE parse, multi-round tool-call loop over the same 19 Joplin tools (calls `executeTool` directly; no MCP proxy), abortable from the Stop button
+- **Self-contained** — no `claude`/`copilot` install needed; works on any OpenAI-compatible endpoint
+- **Endpoint picker** — kimi-cn (`api.moonshot.cn`) vs international (`api.moonshot.ai`); model dropdown (kimi-k3, k2.7-code, k2.6, k2.5, moonshot-v1-*); API key stored in Joplin's secure settings
+- **Capabilities wired per Moonshot docs** — automatic context caching (`prompt_cache_key`), built-in web search (`$web_search`, toggleable, billed per trigger), vision input (images as base64), and **live reasoning display** for kimi-k3 (chain-of-thought streams into a collapsible "thought process" block)
+- Reuses the existing approval cards, ask_user, long-term memory, history and attachments
+- Groundwork for the future "multiple user-named OpenAI-compatible bots" idea
+
+---
+
 ## 🧭 Ideas / Later
 
 - [ ] Memory helpers: one-click "consolidate now", memory viewer entry in the panel

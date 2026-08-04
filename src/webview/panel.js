@@ -505,11 +505,30 @@ function endStreamBubble() {
   _streamRaw = '';
 }
 
+// Reasoning (chain-of-thought) block state for reasoning models (kimi-k3).
+// Streams into a collapsible <details>; once the answer/tool/turn arrives the
+// block is collapsed to a "thought process" toggle the user can reopen.
+var _reasoningDetails = null;
+var _reasoningBody = null;
+var _reasoningRaw = '';
+
+function endReasoning() {
+  if (_reasoningDetails) {
+    var sum = _reasoningDetails.querySelector('summary');
+    if (sum) sum.textContent = '💭 ' + T('thinking');
+    _reasoningDetails.open = false;
+  }
+  _reasoningDetails = null;
+  _reasoningBody = null;
+  _reasoningRaw = '';
+}
+
 webviewApi.onMessage(function (msg) {
   if (!msg || !msg.message) return;
   var m = msg.message;
 
   if (m.name === 'assistantStart') {
+    endReasoning();
     _streamRaw = '';
     _streamBubble = addBubble('cc-assistant', '');
     return;
@@ -518,6 +537,29 @@ webviewApi.onMessage(function (msg) {
     if (!_streamBubble) { _streamRaw = ''; _streamBubble = addBubble('cc-assistant', ''); }
     _streamRaw += m.text;
     _streamBubble.innerHTML = renderLite(_streamRaw);
+    scrollToBottom();
+    return;
+  }
+  if (m.name === 'reasoningStart') {
+    if (!_reasoningDetails) {
+      _reasoningDetails = document.createElement('details');
+      _reasoningDetails.className = 'cc-reasoning';
+      _reasoningDetails.open = true;
+      var summ = document.createElement('summary');
+      summ.textContent = '🤔 ' + T('thinkingLive');
+      _reasoningBody = document.createElement('div');
+      _reasoningBody.className = 'cc-reasoning-body';
+      _reasoningDetails.appendChild(summ);
+      _reasoningDetails.appendChild(_reasoningBody);
+      appendToMessages(_reasoningDetails);
+      _reasoningRaw = '';
+    }
+    return;
+  }
+  if (m.name === 'reasoningDelta') {
+    if (!_reasoningBody) { return; }
+    _reasoningRaw += m.text;
+    _reasoningBody.textContent = _reasoningRaw;
     scrollToBottom();
     return;
   }
@@ -602,10 +644,11 @@ webviewApi.onMessage(function (msg) {
     }
   } else if (m.name === 'backendState') {
     var bb = el('cc-backend');
-    var label = m.backend === 'copilot' ? 'Copilot' : 'Claude';
+    var label = m.backend === 'copilot' ? 'Copilot' : (m.backend === 'kimi' ? 'Kimi' : 'Claude');
     if (bb) {
-      bb.value = m.backend === 'copilot' ? 'copilot' : 'claude';
+      bb.value = (m.backend === 'copilot' || m.backend === 'kimi') ? m.backend : 'claude';
       bb.classList.toggle('cc-backend-copilot', m.backend === 'copilot');
+      bb.classList.toggle('cc-backend-kimi', m.backend === 'kimi');
     }
     if (m.switched) {
       // Own row per switch - addToolChip would glue repeated switches (and
@@ -632,6 +675,7 @@ webviewApi.onMessage(function (msg) {
       scrollToBottom();
     }
   } else if (m.name === 'userQuestion') {
+    endReasoning();
     endStreamBubble();
     var qs = m.questions || [];
     for (var qi = 0; qi < qs.length; qi++) {
@@ -658,6 +702,7 @@ webviewApi.onMessage(function (msg) {
       goneCard.classList.add('cc-q-answered');
     }
   } else if (m.name === 'toolUse') {
+    endReasoning();
     endStreamBubble();
     addToolChip('⚙ ' + m.tool);
   } else if (m.name === 'toolDone') {
@@ -665,9 +710,11 @@ webviewApi.onMessage(function (msg) {
   } else if (m.name === 'busy') {
     setBusy(m.busy === true);
   } else if (m.name === 'turnDone') {
+    endReasoning();
     endStreamBubble();
     setBusy(false);
   } else if (m.name === 'error') {
+    endReasoning();
     endStreamBubble();
     addBubble('cc-error', escapeHtml(m.text));
     setBusy(false);

@@ -43,6 +43,19 @@
 
 ---
 
+## ✅ Kimi（Moonshot）API 后端（v1.2.0）
+
+首个**不依赖 CLI** 的后端：不再 spawn 子进程，插件直接调用 Moonshot 的 OpenAI 兼容 API，并在进程内跑自己的 agentic loop。
+
+- **进程内引擎** —— SSE 流式解析、多轮工具调用循环，复用同一套 19 个笔记工具（直接调 `executeTool`，省掉 MCP proxy），可被停止按钮中断
+- **自包含** —— 无需安装 `claude`/`copilot`；适配任意 OpenAI 兼容端点
+- **端点选择** —— kimi-cn（`api.moonshot.cn`）/ 国际（`api.moonshot.ai`）；模型下拉（kimi-k3、k2.7-code、k2.6、k2.5、moonshot-v1-*）；API 密钥存于 Joplin 安全设置
+- **按官方手册接入的能力** —— 自动上下文缓存（`prompt_cache_key`）、内置联网搜索（`$web_search`，可开关，触发才计费）、视觉输入（图片 base64）、以及 kimi-k3 的**思考过程实时显示**（推理内容流入可折叠的「思考过程」块）
+- 复用现有的审批卡片、ask_user、长期记忆、历史与附件
+- 为未来「多组用户自命名的 OpenAI 兼容 bot」打好地基
+
+---
+
 ## 📌 说明：Joplin 内置 AI（3.7+）
 
 Joplin 3.7 预发布加入了官方 AI：`joplin.ai.chat()` provider 抽象、向量索引、

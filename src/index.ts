@@ -4,6 +4,7 @@
 declare const joplin: any;
 
 const nodeHttp = require('http');
+const nodeHttps = require('https');
 const nodeFs = require('fs');
 const nodePath = require('path');
 const nodeChildProcess = require('child_process');
@@ -54,7 +55,7 @@ joplin.plugins.register({
       'backend': {
         section: 'joplinAide', type: SETTING_STRING, value: 'claude', public: true,
         isEnum: true,
-        options: { claude: 'Claude Code', copilot: 'GitHub Copilot' },
+        options: { claude: 'Claude Code', copilot: 'GitHub Copilot', kimi: 'Kimi (Moonshot)' },
         label: t.sBackend,
         description: t.sBackendDesc,
       },
@@ -85,6 +86,46 @@ joplin.plugins.register({
         section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
         label: t.sClaudeArgs,
         description: t.sClaudeArgsDesc,
+      },
+      // Kimi is a self-contained backend: the plugin calls Moonshot's
+      // OpenAI-compatible endpoint directly (no CLI). It runs its own in-process
+      // agentic loop over the same Joplin tools.
+      'kimiBaseUrl': {
+        section: 'joplinAide', type: SETTING_STRING, value: 'https://api.moonshot.cn/v1', public: true,
+        isEnum: true,
+        options: {
+          'https://api.moonshot.cn/v1': 'kimi-cn · 国内平台 (platform.moonshot.cn)',
+          'https://api.moonshot.ai/v1': 'international · 国际平台 (platform.moonshot.ai)',
+        },
+        label: t.sKimiBaseUrl,
+        description: t.sKimiBaseUrlDesc,
+      },
+      'kimiApiKey': {
+        section: 'joplinAide', type: SETTING_STRING, value: '', public: true, secure: true,
+        label: t.sKimiKey,
+        description: t.sKimiKeyDesc,
+      },
+      'kimiModel': {
+        section: 'joplinAide', type: SETTING_STRING, value: 'kimi-k3', public: true,
+        isEnum: true,
+        options: {
+          'kimi-k3': 'kimi-k3 (旗舰, 1M 上下文)',
+          'kimi-k2.7-code': 'kimi-k2.7-code',
+          'kimi-k2.7-code-highspeed': 'kimi-k2.7-code-highspeed',
+          'kimi-k2.6': 'kimi-k2.6',
+          'kimi-k2.5': 'kimi-k2.5',
+          'moonshot-v1-auto': 'moonshot-v1-auto',
+          'moonshot-v1-8k': 'moonshot-v1-8k',
+          'moonshot-v1-32k': 'moonshot-v1-32k',
+          'moonshot-v1-128k': 'moonshot-v1-128k',
+        },
+        label: t.sKimiModel,
+        description: t.sKimiModelDesc,
+      },
+      'kimiWebSearch': {
+        section: 'joplinAide', type: SETTING_BOOL, value: true, public: true,
+        label: t.sKimiWebSearch,
+        description: t.sKimiWebSearchDesc,
       },
       'copilotPath': {
         section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
@@ -141,6 +182,7 @@ joplin.plugins.register({
       '    <select id="cc-backend" title="' + escapeHtml(t.titleBackend) + '">',
       '      <option value="claude">Claude</option>',
       '      <option value="copilot">Copilot</option>',
+      '      <option value="kimi">Kimi</option>',
       '    </select>',
       '    <button id="cc-history" title="' + escapeHtml(t.titleHistory) + '">&#x1F550;</button>',
       '    <button id="cc-new" title="' + escapeHtml(t.titleNew) + '">&#x2795;</button>',
@@ -840,10 +882,23 @@ joplin.plugins.register({
     // of feeding a foreign id to --resume ("No session matched" errors).
     let sessionBackend: string = '';
 
+    // Kimi runs an in-process API loop instead of a child process. These track
+    // the in-flight HTTP request so the Stop button can abort it, and mark the
+    // turn as busy for the concurrency/ready checks that used to key off `child`.
+    let apiInFlight = false;
+    let apiReq: any = null;
+    let apiAborted = false;
+
     // Force-stop the running request. On Windows child.kill() only terminates
     // the wrapper shell - taskkill /T /F takes the whole process tree down so
     // the claude process (and its MCP proxy) cannot survive the stop button.
     function killChild(): void {
+      // Abort the Kimi API request, if one is streaming.
+      if (apiReq) {
+        apiAborted = true;
+        try { apiReq.destroy(); } catch (_) {}
+        apiReq = null;
+      }
       if (!child) return;
       try {
         if (process.platform === 'win32') {
@@ -891,8 +946,263 @@ joplin.plugins.register({
       return s;
     }
 
+    /* ---------- Kimi: in-process OpenAI-compatible engine ---------- */
+    // Tools the API model may call. approval_prompt is a CLI permission bridge
+    // with no meaning here - executeTool runs the confirm cards directly.
+    const KIMI_TOOL_EXCLUDE: { [k: string]: boolean } = { approval_prompt: true };
+    function kimiToolSpecs(): any[] {
+      return toolDefs
+        .filter((d) => !KIMI_TOOL_EXCLUDE[d.name])
+        .map((d) => ({ type: 'function', function: { name: d.name, description: d.description, parameters: d.inputSchema } }));
+    }
+
+    // Build the user message content. Images ride as base64 data URLs (Moonshot
+    // vision models accept image_url); text-ish files are inlined; binaries are
+    // noted by name. Returns a plain string when there are no images.
+    function kimiUserContent(text: string): any {
+      if (!pendingAttachments.length) return text;
+      let textPart = text;
+      const imageParts: any[] = [];
+      const imgExt = /\.(png|jpe?g|gif|webp)$/i;
+      for (const a of pendingAttachments) {
+        try {
+          const buf = nodeFs.readFileSync(a.filePath);
+          if (imgExt.test(a.fileName)) {
+            const mime = /\.png$/i.test(a.fileName) ? 'image/png'
+              : /\.gif$/i.test(a.fileName) ? 'image/gif'
+              : /\.webp$/i.test(a.fileName) ? 'image/webp' : 'image/jpeg';
+            imageParts.push({ type: 'image_url', image_url: { url: 'data:' + mime + ';base64,' + buf.toString('base64') } });
+          } else {
+            const s = buf.toString('utf8');
+            textPart += (buf.length < 100000 && s.indexOf('�') < 0)
+              ? '\n\n[Attached file ' + a.fileName + ']:\n```\n' + s + '\n```'
+              : '\n\n[Attached file ' + a.fileName + ' - binary, not shown]';
+          }
+        } catch (_) { /* skip unreadable */ }
+      }
+      if (!imageParts.length) return textPart;
+      return [{ type: 'text', text: textPart }].concat(imageParts);
+    }
+
+    // POST /chat/completions with stream:true, reassembling text and tool_call
+    // deltas from the SSE stream. onDelta streams text tokens to the live bubble.
+    function kimiStream(baseUrl: string, apiKey: string, payload: any, onDelta: (t: string) => void, onReasoning: (t: string) => void):
+      Promise<{ content: string; toolCalls: { id: string; name: string; args: string }[]; finish: string }> {
+      return new Promise((resolve, reject) => {
+        let url: any;
+        try { url = new URL(baseUrl.replace(/\/+$/, '') + '/chat/completions'); }
+        catch (_) { reject(new Error('Bad Kimi endpoint: ' + baseUrl)); return; }
+        const body = JSON.stringify(payload);
+        const mod = url.protocol === 'http:' ? nodeHttp : nodeHttps;
+        const req = mod.request({
+          method: 'POST',
+          hostname: url.hostname,
+          port: url.port || (url.protocol === 'http:' ? 80 : 443),
+          path: url.pathname + url.search,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + apiKey,
+            'Content-Length': Buffer.byteLength(body),
+          },
+        }, (res: any) => {
+          if (res.statusCode >= 400) {
+            const ec: any[] = [];
+            res.on('data', (c: any) => ec.push(c));
+            res.on('end', () => reject(new Error('HTTP ' + res.statusCode + ': ' + Buffer.concat(ec).toString('utf8').slice(0, 600))));
+            return;
+          }
+          res.setEncoding('utf8');
+          let buf = '';
+          let content = '';
+          let finish = '';
+          const acc: { [i: number]: { id: string; name: string; args: string } } = {};
+          res.on('data', (chunk: string) => {
+            buf += chunk;
+            let nl;
+            while ((nl = buf.indexOf('\n')) >= 0) {
+              let line = buf.slice(0, nl); buf = buf.slice(nl + 1);
+              if (line.charCodeAt(line.length - 1) === 13) line = line.slice(0, -1); // strip trailing \r
+              if (line.indexOf('data:') !== 0) continue;
+              const data = line.slice(5).trim();
+              if (!data || data === '[DONE]') continue;
+              let ev: any;
+              try { ev = JSON.parse(data); } catch (_) { continue; }
+              const ch = ev.choices && ev.choices[0];
+              if (!ch) continue;
+              const delta = ch.delta || {};
+              // Reasoning models (kimi-k3) stream their chain-of-thought in
+              // reasoning_content before the actual answer arrives in content.
+              if (typeof delta.reasoning_content === 'string' && delta.reasoning_content) onReasoning(delta.reasoning_content);
+              if (typeof delta.content === 'string' && delta.content) { content += delta.content; onDelta(delta.content); }
+              if (Array.isArray(delta.tool_calls)) {
+                for (const tc of delta.tool_calls) {
+                  const i = typeof tc.index === 'number' ? tc.index : 0;
+                  if (!acc[i]) acc[i] = { id: '', name: '', args: '' };
+                  if (tc.id) acc[i].id = tc.id;
+                  if (tc.function) {
+                    if (tc.function.name) acc[i].name += tc.function.name;
+                    if (typeof tc.function.arguments === 'string') acc[i].args += tc.function.arguments;
+                  }
+                }
+              }
+              if (ch.finish_reason) finish = ch.finish_reason;
+            }
+          });
+          res.on('end', () => {
+            const toolCalls = Object.keys(acc).map(Number).sort((a, b) => a - b).map((i) => acc[i]);
+            resolve({ content, toolCalls, finish });
+          });
+          res.on('error', (e: any) => reject(e));
+        });
+        req.on('error', (e: any) => reject(e));
+        apiReq = req;
+        req.write(body);
+        req.end();
+      });
+    }
+
+    async function runKimiApi(userText: string): Promise<void> {
+      apiInFlight = true;
+      apiAborted = false;
+      let sawError = false;
+      post({ name: 'busy', busy: true });
+      try {
+        const baseUrl = String((await joplin.settings.value('kimiBaseUrl')) || '').trim() || 'https://api.moonshot.cn/v1';
+        const apiKey = String((await joplin.settings.value('kimiApiKey')) || '').trim();
+        const model = String((await joplin.settings.value('kimiModel')) || '').trim() || 'kimi-k3';
+        if (!apiKey) { post({ name: 'error', text: t.errKimiKey }); sawError = true; return; }
+
+        // Switching in from a CLI backend: ids don't carry over. The API thread
+        // lives on the conversation (apiMessages), so nothing else to reset.
+        sessionBackend = 'kimi';
+
+        let noteContext = '';
+        try {
+          const sel = await joplin.workspace.selectedNote();
+          if (sel) noteContext = ' The note currently open in the editor is "' + sel.title + '" (id: ' + sel.id + ').';
+        } catch (_) {}
+
+        let memoryPrompt = '';
+        const mem = await resolveMemoryNote();
+        if (mem) {
+          let memBody = mem.body.trim();
+          if (memBody.length > MEMORY_MAX_CHARS) memBody = memBody.slice(0, MEMORY_MAX_CHARS) + '\n[memory truncated - consolidate this note]';
+          memoryPrompt = ' PERSISTENT MEMORY: note ' + mem.id + ' is your long-term memory across all conversations. '
+            + 'When the user asks you to remember something, or you confirm a stable preference or fact worth keeping, append a single concise bullet to that note (append_to_note). '
+            + 'When it grows long or redundant, consolidate it with update_note. Keep entries terse; never store secrets. '
+            + (memBody ? 'Current memory:\n' + memBody : 'The memory note is currently empty.');
+        }
+
+        const systemPrompt = 'You are embedded in the Joplin note-taking app as an assistant. '
+          + 'Use the provided Joplin tools to read, search, create and edit the user\'s notes and notebooks. '
+          + 'Note bodies are Markdown. Updating a note replaces the FULL body: read the note first, apply your change to the complete text, then send the entire new body - never a fragment, diff or patch. '
+          + 'Write operations may require user approval; if one is declined, do not retry it. '
+          + 'To ask the user a multiple-choice question, use the ask_user tool - it renders clickable buttons in the panel and waits for the answer. '
+          + 'Reply in the language the user writes in.'
+          + noteContext + memoryPrompt;
+
+        const userContent = kimiUserContent(userText);
+        if (pendingAttachments.length) { pendingAttachments = []; post({ name: 'attachmentsCleared' }); }
+
+        record('user', userText);
+        if (currentConv) currentConv.backend = 'kimi';
+
+        // Raw API message thread lives on the conversation. Rebuild from display
+        // history if absent (e.g. a conversation started on another backend).
+        let msgs: any[] = (currentConv && Array.isArray(currentConv.apiMessages)) ? currentConv.apiMessages.slice() : [];
+        if (!msgs.length && currentConv && Array.isArray(currentConv.messages)) {
+          for (const m of currentConv.messages) {
+            if (m.role === 'user') msgs.push({ role: 'user', content: m.text });
+            else if (m.role === 'assistant') msgs.push({ role: 'assistant', content: m.text });
+          }
+          // The user turn just recorded is re-added below as structured content.
+          if (msgs.length && msgs[msgs.length - 1].role === 'user') msgs.pop();
+        }
+        msgs = msgs.filter((m) => m.role !== 'system');
+        msgs.unshift({ role: 'system', content: systemPrompt });
+        msgs.push({ role: 'user', content: userContent });
+
+        const tools = kimiToolSpecs();
+        // Moonshot's server-side web search: declared as a builtin_function, the
+        // model triggers it and executes it internally - the client only echoes
+        // the tool-call arguments back verbatim (billed per triggered search).
+        const webSearchOn = (await joplin.settings.value('kimiWebSearch')) === true;
+        if (webSearchOn) tools.push({ type: 'builtin_function', function: { name: '$web_search' } });
+
+        // Stable key so Moonshot reuses the automatic context cache across the
+        // turns of one conversation (big input-cost savings on long threads).
+        const cacheKey = currentConv ? String(currentConv.id) : undefined;
+
+        for (let round = 0; round < 25; round++) {
+          if (apiAborted) break;
+          let started = false;
+          const onDelta = (txt: string) => {
+            if (!started) { post({ name: 'assistantStart' }); started = true; }
+            post({ name: 'assistantDelta', text: txt });
+          };
+          let startedReasoning = false;
+          const onReasoning = (txt: string) => {
+            if (!startedReasoning) { post({ name: 'reasoningStart' }); startedReasoning = true; }
+            post({ name: 'reasoningDelta', text: txt });
+          };
+          const payload: any = { model, messages: msgs, tools, tool_choice: 'auto', stream: true };
+          if (cacheKey) payload.prompt_cache_key = cacheKey;
+          const { content, toolCalls } = await kimiStream(baseUrl, apiKey, payload, onDelta, onReasoning);
+          apiReq = null;
+          if (apiAborted) break;
+
+          // The image(s) have now been sent - replace the heavy base64 data URLs
+          // in the thread with a placeholder so they are not resent every round
+          // nor written into conversations.json (which would bloat to MBs).
+          for (const m of msgs) {
+            if (Array.isArray(m.content)) {
+              m.content = m.content.map((p: any) => (p && p.type === 'image_url')
+                ? { type: 'text', text: '[image sent earlier]' } : p);
+            }
+          }
+
+          if (content) { record('assistant', content); post({ name: 'assistantText', text: content }); }
+          toolCalls.forEach((tc, i) => { if (!tc.id) tc.id = 'call_' + round + '_' + i; });
+          const asstMsg: any = { role: 'assistant', content: content ? content : null };
+          if (toolCalls.length) {
+            asstMsg.tool_calls = toolCalls.map((tc) => ({ id: tc.id, type: 'function', function: { name: tc.name, arguments: tc.args || '{}' } }));
+          }
+          msgs.push(asstMsg);
+          if (!toolCalls.length) break;
+
+          for (const tc of toolCalls) {
+            // Builtin web search: Moonshot runs it; we return the arguments as-is.
+            if (tc.name === '$web_search') {
+              post({ name: 'toolUse', tool: 'web_search' });
+              msgs.push({ role: 'tool', tool_call_id: tc.id, name: '$web_search', content: tc.args || '{}' });
+              continue;
+            }
+            post({ name: 'toolUse', tool: tc.name });
+            let argsObj: any = {};
+            try { argsObj = tc.args ? JSON.parse(tc.args) : {}; } catch (_) {}
+            const out = await executeTool(tc.name, argsObj);
+            const resultStr = typeof out.result === 'string' ? out.result : JSON.stringify(out.result);
+            msgs.push({ role: 'tool', tool_call_id: tc.id, name: tc.name, content: resultStr });
+          }
+          if (apiAborted) break;
+        }
+
+        if (currentConv) { currentConv.apiMessages = msgs; saveHistory(); }
+      } catch (err: any) {
+        if (!apiAborted) {
+          sawError = true;
+          post({ name: 'error', text: String(err && err.message ? err.message : err).slice(0, 600) });
+        }
+      } finally {
+        apiReq = null;
+        apiInFlight = false;
+        post({ name: 'turnDone', isError: sawError });
+        post({ name: 'busy', busy: false });
+      }
+    }
+
     async function runClaude(prompt: string): Promise<void> {
-      if (child) {
+      if (child || apiInFlight) {
         // Safety net (the webview also locks sending while busy). Reset the
         // webview's busy lock or it would stay disabled forever.
         post({ name: 'error', text: t.errAlreadyRunning });
@@ -900,6 +1210,8 @@ joplin.plugins.register({
         return;
       }
       const backend = String((await joplin.settings.value('backend')) || 'claude');
+      // Kimi is served by the in-process OpenAI-compatible engine, not a CLI.
+      if (backend === 'kimi') { await runKimiApi(prompt); return; }
       if (sessionId && sessionBackend && sessionBackend !== backend) { sessionId = ''; sessionAllowed = {}; }
       sessionBackend = backend;
 
@@ -1211,7 +1523,7 @@ joplin.plugins.register({
         if (currentConv && currentConv.messages && currentConv.messages.length) {
           post({ name: 'conversationLoaded', id: currentConv.id, messages: currentConv.messages, archiveSegments: currentConv.archiveSegments || 0 });
         }
-        post({ name: 'busy', busy: !!child });
+        post({ name: 'busy', busy: !!child || apiInFlight });
         post({ name: 'backendState', backend: String((await joplin.settings.value('backend')) || 'claude') });
         for (const cid of Object.keys(pendingConfirms)) {
           post({ name: 'confirmWrite', requestId: cid, summary: pendingConfirms[cid].summary });
@@ -1238,7 +1550,7 @@ joplin.plugins.register({
         // Dropdown switch from the panel header. Takes effect on the next
         // message: runClaude reads the setting per turn, and the
         // lastBackend guard starts a fresh CLI session automatically.
-        const next = msg.value === 'copilot' ? 'copilot' : 'claude';
+        const next = (msg.value === 'copilot' || msg.value === 'kimi') ? msg.value : 'claude';
         const cur = String((await joplin.settings.value('backend')) || 'claude');
         if (next !== cur) {
           await joplin.settings.setValue('backend', next);
@@ -1263,6 +1575,7 @@ joplin.plugins.register({
           if (idx >= 0) {
             killChild();
             currentConv.messages = currentConv.messages.slice(0, idx);
+            currentConv.apiMessages = null; // rebuild the Kimi thread from the truncated history
             currentConv.updated = Date.now();
             currentConv.sessionId = '';
             sessionId = '';
