@@ -54,6 +54,7 @@
 - 复用现有的审批卡片、ask_user、长期记忆、历史与附件
 - 为未来「多组用户自命名的 OpenAI 兼容 bot」打好地基
 - （v1.2.1）新增开关：是否显示 kimi-k3 的思考过程
+- （v1.2.2）修复：联网搜索静默无结果——`$web_search` 的 tool_call 被当作 `function` 回填（应为 `builtin_function`），导致 Moonshot 跳过注入搜索结果
 
 ---
 

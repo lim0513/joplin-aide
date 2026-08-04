@@ -992,7 +992,7 @@ joplin.plugins.register({
     // POST /chat/completions with stream:true, reassembling text and tool_call
     // deltas from the SSE stream. onDelta streams text tokens to the live bubble.
     function kimiStream(baseUrl: string, apiKey: string, payload: any, onDelta: (t: string) => void, onReasoning: (t: string) => void):
-      Promise<{ content: string; toolCalls: { id: string; name: string; args: string }[]; finish: string }> {
+      Promise<{ content: string; toolCalls: { id: string; name: string; args: string; type: string }[]; finish: string }> {
       return new Promise((resolve, reject) => {
         let url: any;
         try { url = new URL(baseUrl.replace(/\/+$/, '') + '/chat/completions'); }
@@ -1020,7 +1020,7 @@ joplin.plugins.register({
           let buf = '';
           let content = '';
           let finish = '';
-          const acc: { [i: number]: { id: string; name: string; args: string } } = {};
+          const acc: { [i: number]: { id: string; name: string; args: string; type: string } } = {};
           res.on('data', (chunk: string) => {
             buf += chunk;
             let nl;
@@ -1042,8 +1042,9 @@ joplin.plugins.register({
               if (Array.isArray(delta.tool_calls)) {
                 for (const tc of delta.tool_calls) {
                   const i = typeof tc.index === 'number' ? tc.index : 0;
-                  if (!acc[i]) acc[i] = { id: '', name: '', args: '' };
+                  if (!acc[i]) acc[i] = { id: '', name: '', args: '', type: '' };
                   if (tc.id) acc[i].id = tc.id;
+                  if (tc.type) acc[i].type = tc.type;
                   if (tc.function) {
                     if (tc.function.name) acc[i].name += tc.function.name;
                     if (typeof tc.function.arguments === 'string') acc[i].args += tc.function.arguments;
@@ -1175,7 +1176,14 @@ joplin.plugins.register({
           toolCalls.forEach((tc, i) => { if (!tc.id) tc.id = 'call_' + round + '_' + i; });
           const asstMsg: any = { role: 'assistant', content: content ? content : null };
           if (toolCalls.length) {
-            asstMsg.tool_calls = toolCalls.map((tc) => ({ id: tc.id, type: 'function', function: { name: tc.name, arguments: tc.args || '{}' } }));
+            // Preserve the tool_call type - $web_search comes back as
+            // "builtin_function"; echoing it as "function" makes Moonshot skip
+            // injecting the search results (the search silently returns nothing).
+            asstMsg.tool_calls = toolCalls.map((tc) => ({
+              id: tc.id,
+              type: tc.type || (tc.name === '$web_search' ? 'builtin_function' : 'function'),
+              function: { name: tc.name, arguments: tc.args || '{}' },
+            }));
           }
           msgs.push(asstMsg);
           if (!toolCalls.length) break;

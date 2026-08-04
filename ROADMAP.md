@@ -54,6 +54,7 @@ First **CLI-free** backend: instead of shelling out, the plugin talks directly t
 - Reuses the existing approval cards, ask_user, long-term memory, history and attachments
 - Groundwork for the future "multiple user-named OpenAI-compatible bots" idea
 - (v1.2.1) Setting to toggle the kimi-k3 reasoning display on/off
+- (v1.2.2) Fix: web search was silently returning nothing - the `$web_search` tool_call was echoed back as `function` instead of `builtin_function`, so Moonshot skipped injecting the results
 
 ---
 
