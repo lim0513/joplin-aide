@@ -1025,6 +1025,31 @@ joplin.plugins.register({
     /* ---------- Kimi: in-process OpenAI-compatible engine ---------- */
     // Tools the API model may call. approval_prompt is a CLI permission bridge
     // with no meaning here - executeTool runs the confirm cards directly.
+    // Drop past $web_search plumbing from a stored thread before resending it.
+    // Moonshot ties web results to an ephemeral search_id; replaying a stale one
+    // (especially to another model, e.g. kimi-k3) fails with "tokenization
+    // failed". The model's final answer text is kept; only the search turn and
+    // its echoed result are removed.
+    function stripWebSearchHistory(messages: any[]): any[] {
+      const webIds: { [id: string]: boolean } = {};
+      const out: any[] = [];
+      for (const m of messages) {
+        if (m.role === 'assistant' && Array.isArray(m.tool_calls)) {
+          const webCalls = m.tool_calls.filter((tc: any) => tc.function && tc.function.name === '$web_search');
+          if (webCalls.length) {
+            for (const tc of webCalls) webIds[tc.id] = true;
+            const others = m.tool_calls.filter((tc: any) => !(tc.function && tc.function.name === '$web_search'));
+            if (others.length) out.push(Object.assign({}, m, { tool_calls: others }));
+            // pure web-search turn -> drop it whole (its content is just filler)
+            continue;
+          }
+        }
+        if (m.role === 'tool' && (m.name === '$web_search' || webIds[m.tool_call_id])) continue;
+        out.push(m);
+      }
+      return out;
+    }
+
     const KIMI_TOOL_EXCLUDE: { [k: string]: boolean } = { approval_prompt: true };
     function kimiToolSpecs(): any[] {
       return toolDefs
@@ -1258,6 +1283,7 @@ joplin.plugins.register({
           if (msgs.length && msgs[msgs.length - 1].role === 'user') msgs.pop();
         }
         msgs = msgs.filter((m) => m.role !== 'system');
+        msgs = stripWebSearchHistory(msgs); // remove stale $web_search plumbing
         msgs.unshift({ role: 'system', content: systemPrompt });
         msgs.push({ role: 'user', content: userContent });
 

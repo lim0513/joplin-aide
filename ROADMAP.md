@@ -57,6 +57,7 @@ First **CLI-free** backend: instead of shelling out, the plugin talks directly t
 - (v1.2.2) Fix: web search was silently returning nothing - the `$web_search` tool_call was echoed back as `function` instead of `builtin_function`, so Moonshot skipped injecting the results
 - (v1.2.3) Kimi can now read attachments - both chat uploads and note attachments - via Moonshot file-extract (PDF/Word/Excel/PowerPoint/text/code); images ride as vision input. Adds a `read_attachment` tool so the model can pull a note attachment's content
 - (v1.2.4) `create_attachment` tool (all backends): the AI can author a text-based file (Markdown/CSV/JSON/SVG/HTML/code/text), save it as a Joplin resource, and embed/link it in a note. Binary formats can't be generated from text, so those are out of scope
+- (v1.2.5) Fix: a conversation that had used web search failed with "tokenization failed" after switching to kimi-k3 - Moonshot ties web results to an ephemeral search_id, and replaying a stale one breaks. The stored $web_search plumbing is now stripped from history before each request (the answer text is kept); broken conversations self-heal on the next message
 
 ---
 
