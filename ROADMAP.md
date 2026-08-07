@@ -55,6 +55,7 @@ First **CLI-free** backend: instead of shelling out, the plugin talks directly t
 - Groundwork for the future "multiple user-named OpenAI-compatible bots" idea
 - (v1.2.1) Setting to toggle the kimi-k3 reasoning display on/off
 - (v1.2.2) Fix: web search was silently returning nothing - the `$web_search` tool_call was echoed back as `function` instead of `builtin_function`, so Moonshot skipped injecting the results
+- (v1.2.3) Kimi can now read attachments - both chat uploads and note attachments - via Moonshot file-extract (PDF/Word/Excel/PowerPoint/text/code); images ride as vision input. Adds a `read_attachment` tool so the model can pull a note attachment's content
 
 ---
 

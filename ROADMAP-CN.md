@@ -55,6 +55,7 @@
 - 为未来「多组用户自命名的 OpenAI 兼容 bot」打好地基
 - （v1.2.1）新增开关：是否显示 kimi-k3 的思考过程
 - （v1.2.2）修复：联网搜索静默无结果——`$web_search` 的 tool_call 被当作 `function` 回填（应为 `builtin_function`），导致 Moonshot 跳过注入搜索结果
+- （v1.2.3）Kimi 现在能读附件——聊天上传的附件和笔记里的附件都行——通过 Moonshot file-extract（PDF/Word/Excel/PPT/文本/代码）；图片走视觉输入。新增 `read_attachment` 工具让模型拉取笔记附件内容
 
 ---
 

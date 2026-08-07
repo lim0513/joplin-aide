@@ -339,6 +339,11 @@ joplin.plugins.register({
         inputSchema: { type: 'object', properties: { note_id: { type: 'string' } }, required: ['note_id'] },
       },
       {
+        name: 'read_attachment',
+        description: 'Read the CONTENT of a note attachment by its id (from list_note_attachments). Returns extracted text for PDF/Word/Excel/PowerPoint, plain text and code files. Use this to actually read an attachment when you cannot open its local_path with a file tool.',
+        inputSchema: { type: 'object', properties: { attachment_id: { type: 'string', description: 'Attachment/resource id (the "id" field from list_note_attachments)' } }, required: ['attachment_id'] },
+      },
+      {
         name: 'open_note',
         description: 'Open a note in the Joplin editor (navigate the user to it).',
         inputSchema: { type: 'object', properties: { note_id: { type: 'string' } }, required: ['note_id'] },
@@ -634,6 +639,30 @@ joplin.plugins.register({
             local_path: nodePath.join(getResourcesDir(), res.id + (res.file_extension ? '.' + res.file_extension : '')),
           }));
           return { result: items.length ? items : 'This note has no attachments.' };
+        }
+        case 'read_attachment': {
+          let res: any;
+          try { res = await joplin.data.get(['resources', args.attachment_id], { fields: ['id', 'title', 'mime', 'file_extension', 'size'] }); }
+          catch (_) { return { result: 'Attachment not found: ' + args.attachment_id, isError: true }; }
+          const p = nodePath.join(getResourcesDir(), res.id + (res.file_extension ? '.' + res.file_extension : ''));
+          if (!nodeFs.existsSync(p)) return { result: 'Attachment file not on disk (may not be synced yet): ' + p, isError: true };
+          const buf = nodeFs.readFileSync(p);
+          const s = buf.toString('utf8');
+          const isImage = /^image\//.test(String(res.mime || ''));
+          // Small clean text: return as-is. Otherwise use Moonshot file-extract
+          // (works for the Kimi backend; CLI backends can Read the local_path).
+          if (!isImage && buf.length < 100000 && s.indexOf('�') < 0) return { result: s };
+          const kimiKey = String((await joplin.settings.value('kimiApiKey')) || '').trim();
+          const kimiBase = String((await joplin.settings.value('kimiBaseUrl')) || '').trim() || 'https://api.moonshot.cn/v1';
+          if (kimiKey) {
+            try {
+              const extracted = await kimiExtractFile(kimiBase, kimiKey, p, res.title || ('file' + (res.file_extension ? '.' + res.file_extension : '')));
+              return { result: extracted };
+            } catch (e: any) {
+              return { result: 'Could not extract this attachment (' + String(e && e.message ? e.message : e) + '). Local path: ' + p, isError: true };
+            }
+          }
+          return { result: 'This attachment is binary/an image. Local path: ' + p + ' - use the Read tool to view it.' };
         }
         case 'open_note':
           await joplin.commands.execute('openNote', args.note_id);
@@ -961,27 +990,88 @@ joplin.plugins.register({
         .map((d) => ({ type: 'function', function: { name: d.name, description: d.description, parameters: d.inputSchema } }));
     }
 
-    // Build the user message content. Images ride as base64 data URLs (Moonshot
-    // vision models accept image_url); text-ish files are inlined; binaries are
-    // noted by name. Returns a plain string when there are no images.
-    function kimiUserContent(text: string): any {
+    // Minimal raw HTTP helper for the Kimi file endpoints (multipart upload,
+    // content retrieval, delete). Returns the status and raw body buffer.
+    function kimiRaw(method: string, urlStr: string, apiKey: string, extraHeaders: any, bodyBuf: any):
+      Promise<{ status: number; buf: any }> {
+      return new Promise((resolve, reject) => {
+        let url: any;
+        try { url = new URL(urlStr); } catch (_) { reject(new Error('Bad URL: ' + urlStr)); return; }
+        const mod = url.protocol === 'http:' ? nodeHttp : nodeHttps;
+        const headers: any = Object.assign({ 'Authorization': 'Bearer ' + apiKey }, extraHeaders || {});
+        if (bodyBuf) headers['Content-Length'] = bodyBuf.length;
+        const req = mod.request({
+          method, hostname: url.hostname, port: url.port || (url.protocol === 'http:' ? 80 : 443),
+          path: url.pathname + url.search, headers,
+        }, (res: any) => {
+          const ch: any[] = [];
+          res.on('data', (c: any) => ch.push(c));
+          res.on('end', () => resolve({ status: res.statusCode, buf: Buffer.concat(ch) }));
+          res.on('error', reject);
+        });
+        req.on('error', reject);
+        if (bodyBuf) req.write(bodyBuf);
+        req.end();
+      });
+    }
+
+    // Moonshot file-extract: upload a file, fetch the server-extracted text,
+    // then delete the file (best effort). Handles PDF/Word/Excel/PPT/etc.
+    async function kimiExtractFile(baseUrl: string, apiKey: string, filePath: string, fileName: string): Promise<string> {
+      const base = baseUrl.replace(/\/+$/, '');
+      const fileBuf = nodeFs.readFileSync(filePath);
+      const boundary = '----JoplinAide' + Date.now();
+      const pre = Buffer.from(
+        '--' + boundary + '\r\nContent-Disposition: form-data; name="purpose"\r\n\r\nfile-extract\r\n'
+        + '--' + boundary + '\r\nContent-Disposition: form-data; name="file"; filename="'
+        + fileName.replace(/["\r\n]/g, '') + '"\r\nContent-Type: application/octet-stream\r\n\r\n', 'utf8');
+      const tail = Buffer.from('\r\n--' + boundary + '--\r\n', 'utf8');
+      const body = Buffer.concat([pre, fileBuf, tail]);
+      const up = await kimiRaw('POST', base + '/files', apiKey, { 'Content-Type': 'multipart/form-data; boundary=' + boundary }, body);
+      if (up.status >= 400) throw new Error('upload HTTP ' + up.status + ': ' + up.buf.toString('utf8').slice(0, 200));
+      let id = '';
+      try { id = JSON.parse(up.buf.toString('utf8')).id; } catch (_) {}
+      if (!id) throw new Error('no file id in upload response');
+      const ct = await kimiRaw('GET', base + '/files/' + id + '/content', apiKey, {}, null);
+      kimiRaw('DELETE', base + '/files/' + id, apiKey, {}, null).catch(() => {}); // cleanup, don't wait
+      if (ct.status >= 400) throw new Error('extract HTTP ' + ct.status);
+      const raw = ct.buf.toString('utf8');
+      try { const j = JSON.parse(raw); if (j && typeof j.content === 'string') return j.content; } catch (_) {}
+      return raw;
+    }
+
+    // Build the user message content. Images ride as base64 data URLs (Kimi k3 /
+    // k2.7 / k2.6 accept image input); small text files are inlined; other files
+    // (PDF/Word/Excel/... or large/binary) go through Moonshot file-extract so
+    // the model can actually read them. Returns a plain string when no images.
+    async function kimiUserContent(text: string, baseUrl: string, apiKey: string): Promise<any> {
       if (!pendingAttachments.length) return text;
       let textPart = text;
       const imageParts: any[] = [];
       const imgExt = /\.(png|jpe?g|gif|webp)$/i;
       for (const a of pendingAttachments) {
         try {
-          const buf = nodeFs.readFileSync(a.filePath);
           if (imgExt.test(a.fileName)) {
+            const buf = nodeFs.readFileSync(a.filePath);
             const mime = /\.png$/i.test(a.fileName) ? 'image/png'
               : /\.gif$/i.test(a.fileName) ? 'image/gif'
               : /\.webp$/i.test(a.fileName) ? 'image/webp' : 'image/jpeg';
             imageParts.push({ type: 'image_url', image_url: { url: 'data:' + mime + ';base64,' + buf.toString('base64') } });
+            continue;
+          }
+          const buf = nodeFs.readFileSync(a.filePath);
+          const s = buf.toString('utf8');
+          if (buf.length < 100000 && s.indexOf('�') < 0) {
+            textPart += '\n\n[Attached file ' + a.fileName + ']:\n```\n' + s + '\n```';
           } else {
-            const s = buf.toString('utf8');
-            textPart += (buf.length < 100000 && s.indexOf('�') < 0)
-              ? '\n\n[Attached file ' + a.fileName + ']:\n```\n' + s + '\n```'
-              : '\n\n[Attached file ' + a.fileName + ' - binary, not shown]';
+            // PDF / Office / large / binary -> Moonshot server-side extraction.
+            post({ name: 'toolUse', tool: 'read_attachment' });
+            try {
+              const extracted = await kimiExtractFile(baseUrl, apiKey, a.filePath, a.fileName);
+              textPart += '\n\n[Attached file ' + a.fileName + ' (extracted content)]:\n' + extracted;
+            } catch (e: any) {
+              textPart += '\n\n[Attached file ' + a.fileName + ' - could not be read: ' + String(e && e.message ? e.message : e) + ']';
+            }
           }
         } catch (_) { /* skip unreadable */ }
       }
@@ -1103,11 +1193,12 @@ joplin.plugins.register({
           + 'Use the provided Joplin tools to read, search, create and edit the user\'s notes and notebooks. '
           + 'Note bodies are Markdown. Updating a note replaces the FULL body: read the note first, apply your change to the complete text, then send the entire new body - never a fragment, diff or patch. '
           + 'Write operations may require user approval; if one is declined, do not retry it. '
+          + 'To read a note\'s attachment (PDF, Word, Excel, PowerPoint, text, code...), call list_note_attachments then read_attachment with the attachment id. '
           + 'To ask the user a multiple-choice question, use the ask_user tool - it renders clickable buttons in the panel and waits for the answer. '
           + 'Reply in the language the user writes in.'
           + noteContext + memoryPrompt;
 
-        const userContent = kimiUserContent(userText);
+        const userContent = await kimiUserContent(userText, baseUrl, apiKey);
         if (pendingAttachments.length) { pendingAttachments = []; post({ name: 'attachmentsCleared' }); }
 
         record('user', userText);
