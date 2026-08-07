@@ -344,6 +344,21 @@ joplin.plugins.register({
         inputSchema: { type: 'object', properties: { attachment_id: { type: 'string', description: 'Attachment/resource id (the "id" field from list_note_attachments)' } }, required: ['attachment_id'] },
       },
       {
+        name: 'create_attachment',
+        description: 'Create a file from text content and attach it to a note. Use for text-based files you can author: Markdown, CSV, JSON, SVG, HTML, code, plain text. The file becomes a Joplin resource and a link (an image embed for SVG/image extensions) is appended to the note body. Cannot produce real binary files (PNG/JPG/PDF/xlsx) - those cannot be generated from text.',
+        write: true,
+        confirmSummary: (a) => fmt(t.cCreateAttachment, { name: a.filename || 'file', id: a.note_id }),
+        inputSchema: {
+          type: 'object',
+          properties: {
+            note_id: { type: 'string', description: 'Note to attach the file to' },
+            filename: { type: 'string', description: 'File name including extension, e.g. data.csv, chart.svg, notes.md' },
+            content: { type: 'string', description: 'The full text content of the file' },
+          },
+          required: ['note_id', 'filename', 'content'],
+        },
+      },
+      {
         name: 'open_note',
         description: 'Open a note in the Joplin editor (navigate the user to it).',
         inputSchema: { type: 'object', properties: { note_id: { type: 'string' } }, required: ['note_id'] },
@@ -663,6 +678,33 @@ joplin.plugins.register({
             }
           }
           return { result: 'This attachment is binary/an image. Local path: ' + p + ' - use the Read tool to view it.' };
+        }
+        case 'create_attachment': {
+          const rawName = String(args.filename || 'file.txt');
+          const safeName = (rawName.replace(/[^\w.\-一-鿿]+/g, '_').slice(0, 100)) || 'file.txt';
+          const content = String(args.content == null ? '' : args.content);
+          if (content.length > 5 * 1024 * 1024) return { result: 'Content too large (max 5 MB).', isError: true };
+          const tmpPath = nodePath.join(attachmentsDir, 'gen-' + Date.now() + '-' + safeName);
+          try {
+            nodeFs.writeFileSync(tmpPath, content, 'utf8');
+            const resource = await joplin.data.post(['resources'], null, { title: safeName }, [{ path: tmpPath }]);
+            const ext = (safeName.split('.').pop() || '').toLowerCase();
+            const isImg = /^(svg|png|jpe?g|gif|webp|bmp)$/.test(ext);
+            const link = (isImg ? '!' : '') + '[' + safeName + '](:/' + resource.id + ')';
+            let embedded = false;
+            try {
+              const cur = await joplin.data.get(['notes', args.note_id], { fields: ['body'] });
+              const joined = String(cur.body || '').replace(/\s+$/, '') + '\n\n' + link + '\n';
+              await joplin.data.put(['notes', args.note_id], null, { body: joined });
+              embedded = true;
+            } catch (_) { /* note missing - resource still created */ }
+            post({ name: 'toolDone', text: fmt(t.dAttached, { name: safeName }) });
+            return { result: { resource_id: resource.id, title: safeName, embedded_in_note: embedded ? args.note_id : null } };
+          } catch (e: any) {
+            return { result: 'Failed to create attachment: ' + String(e && e.message ? e.message : e), isError: true };
+          } finally {
+            try { nodeFs.unlinkSync(tmpPath); } catch (_) {}
+          }
         }
         case 'open_note':
           await joplin.commands.execute('openNote', args.note_id);
