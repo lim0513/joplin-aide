@@ -7,6 +7,9 @@ export interface I18nStrings { [key: string]: string; }
 export const i18nData: { [locale: string]: I18nStrings } = {
   'en_US': {
     inputPlaceholder: 'Ask AI about your notes...',
+    emptyHint: 'Ask about the note you have open, search across your notes, or ask for changes — new notes, edits, tags, attachments. Writes are shown for approval first, unless you turn that off in settings.',
+    privacyNotice: 'Note content you send is passed to the AI backend you selected.',
+    privacyDismiss: "Don't show again",
     titleHistory: 'History',
     titleNew: 'New conversation',
     titleSend: 'Send',
@@ -73,6 +76,9 @@ export const i18nData: { [locale: string]: I18nStrings } = {
   },
   'zh_CN': {
     inputPlaceholder: '向 AI 询问你的笔记...',
+    emptyHint: '可以询问当前打开的笔记、搜索笔记，或者让它修改 —— 新建、编辑、加标签、加附件。除非在设置里关掉，写入前都会先请你确认。',
+    privacyNotice: '你发送的笔记内容会传给所选的 AI 后端。',
+    privacyDismiss: '不再显示',
     titleHistory: '历史会话',
     titleNew: '新会话',
     titleSend: '发送',
@@ -139,6 +145,9 @@ export const i18nData: { [locale: string]: I18nStrings } = {
   },
   'ja_JP': {
     inputPlaceholder: 'ノートについて AI に質問...',
+    emptyHint: '開いているノートについて質問したり、ノートを検索したり、変更（新規作成・編集・タグ・添付）を依頼できます。設定で無効にしない限り、書き込み前に確認を求めます。',
+    privacyNotice: '送信したノートの内容は、選択した AI バックエンドに送られます。',
+    privacyDismiss: '今後表示しない',
     titleHistory: '履歴',
     titleNew: '新しい会話',
     titleSend: '送信',

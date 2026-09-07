@@ -52,6 +52,13 @@ joplin.plugins.register({
       // Labels/descriptions come from i18n, resolved from the app locale at
       // registration time (language switches show after the app restart
       // Joplin already requires).
+      // Not user-facing: set by the "Don't show again" link on the privacy
+      // notice in the panel. A setting rather than webview localStorage
+      // because Joplin recreates the panel webview on every layout change.
+      'privacyNoticeDismissed': {
+        section: 'joplinAide', type: SETTING_BOOL, value: false, public: false,
+        label: 'Privacy notice dismissed',
+      },
       'backend': {
         section: 'joplinAide', type: SETTING_STRING, value: 'claude', public: true,
         isEnum: true,
@@ -193,8 +200,14 @@ joplin.plugins.register({
       '    <button id="cc-new" title="' + escapeHtml(t.titleNew) + '">&#x2795;</button>',
       '  </div>',
       '  <div id="cc-messages"></div>',
+      // Sibling of the message list, not a child: CSS shows it only while
+      // #cc-messages is :empty, so no JS has to track the transition.
+      '  <div id="cc-empty">' + escapeHtml(t.emptyHint) + '</div>',
       '  <div id="cc-confirm"></div>',
       '  <div id="cc-attachments"></div>',
+      '  <div id="cc-privacy" style="display:none;"><span>' + escapeHtml(t.privacyNotice) + '</span>',
+      '    <button id="cc-privacy-x" type="button">' + escapeHtml(t.privacyDismiss) + '</button>',
+      '  </div>',
       '  <div class="cc-input-row">',
       '    <textarea id="cc-input" rows="3" placeholder="' + escapeHtml(t.inputPlaceholder) + '"></textarea>',
       '    <div class="cc-input-buttons">',
@@ -1702,6 +1715,7 @@ joplin.plugins.register({
         }
         post({ name: 'busy', busy: !!child || apiInFlight });
         post({ name: 'backendState', backend: String((await joplin.settings.value('backend')) || 'claude') });
+        post({ name: 'privacyNotice', show: (await joplin.settings.value('privacyNoticeDismissed')) !== true });
         for (const cid of Object.keys(pendingConfirms)) {
           post({ name: 'confirmWrite', requestId: cid, summary: pendingConfirms[cid].summary });
         }
@@ -1723,6 +1737,8 @@ joplin.plugins.register({
         } else if (/^:\/[0-9a-f]{32}$/i.test(url)) {
           try { await joplin.commands.execute('openNote', url.slice(2)); } catch (_) { /* note may not exist */ }
         }
+      } else if (msg.name === 'dismissPrivacy') {
+        await joplin.settings.setValue('privacyNoticeDismissed', true);
       } else if (msg.name === 'setBackend') {
         // Dropdown switch from the panel header. Takes effect on the next
         // message: runClaude reads the setting per turn, and the

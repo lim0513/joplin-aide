@@ -291,6 +291,12 @@ document.addEventListener('click', function (e) {
     return;
   }
   if (t.id === 'cc-send') { sendCurrent(); return; }
+  if (t.id === 'cc-privacy-x') {
+    var pv = el('cc-privacy');
+    if (pv) pv.style.display = 'none';
+    postMsg({ name: 'dismissPrivacy' });
+    return;
+  }
   if (t.id === 'cc-attach') {
     var fi = el('cc-file');
     if (fi) fi.click();
@@ -527,6 +533,11 @@ webviewApi.onMessage(function (msg) {
   if (!msg || !msg.message) return;
   var m = msg.message;
 
+  if (m.name === 'privacyNotice') {
+    var pn = el('cc-privacy');
+    if (pn) pn.style.display = m.show ? '' : 'none';
+    return;
+  }
   if (m.name === 'assistantStart') {
     endReasoning();
     _streamRaw = '';
