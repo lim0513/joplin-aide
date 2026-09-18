@@ -77,7 +77,7 @@ Joplin 3.7 预发布加入了官方 AI：`joplin.ai.chat()` provider 抽象、�
 
 - [ ] 记忆辅助：一键"立即整理"、面板内查看记忆入口
 - [ ] 提示词预设（按任务类型的系统提示片段）
-- [ ] **OpenAI Codex CLI 后端** —— headless 条件已成熟（`codex exec --json` JSONL 事件流、`exec resume` 续接、MCP 走 config.toml）；需隔离 CODEX_HOME 并评估非交互 MCP 放行
+- [x] **OpenAI Codex CLI 后端** —— 1.3.1 已上线，走 `codex app-server`（stdio 上的 JSON-RPC）而非 `codex exec`：MCP 服务配置随 `thread/start` 请求传入，无需隔离 CODEX_HOME；Codex 每次调用 MCP 工具前的审批（`mcpServer/elicitation/request`）由插件应答
 - [ ] **Google Antigravity CLI 后端**（观察中）—— Google 将于 2026-06-18 对消费级账户停用托管版 Gemini CLI、迁移至 Antigravity CLI；待其 headless/JSON/MCP 接口稳定后评估
 - [ ] 按会话覆盖模型
 

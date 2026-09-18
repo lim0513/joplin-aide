@@ -2,8 +2,8 @@
 
 function postMsg(msg) { webviewApi.postMessage(msg); }
 
-// True while a claude request is in flight. Sending is locked (button AND
-// Enter key) until the backend reports the turn finished or errored.
+// Only the host's busy state unlocks sending. Final text or errors may arrive
+// before the CLI exits; neither means another request can start yet.
 var _busy = false;
 
 function el(id) { return document.getElementById(id); }
@@ -619,7 +619,7 @@ webviewApi.onMessage(function (msg) {
     _histFetching = false;
     renderHistoryChunk();
     scrollToBottom();
-    setBusy(false);
+    setBusy(m.busy === true);
   } else if (m.name === 'attached') {
     var attWrap = el('cc-attachments');
     if (attWrap) {
@@ -655,11 +655,14 @@ webviewApi.onMessage(function (msg) {
     }
   } else if (m.name === 'backendState') {
     var bb = el('cc-backend');
-    var label = m.backend === 'copilot' ? 'Copilot' : (m.backend === 'kimi' ? 'Kimi' : 'Claude');
+    var labels = { claude: 'Claude', copilot: 'Copilot', codex: 'Codex', kimi: 'Kimi' };
+    var backend = labels[m.backend] ? m.backend : 'claude';
+    var label = labels[backend];
     if (bb) {
-      bb.value = (m.backend === 'copilot' || m.backend === 'kimi') ? m.backend : 'claude';
-      bb.classList.toggle('cc-backend-copilot', m.backend === 'copilot');
-      bb.classList.toggle('cc-backend-kimi', m.backend === 'kimi');
+      bb.value = backend;
+      bb.classList.toggle('cc-backend-copilot', backend === 'copilot');
+      bb.classList.toggle('cc-backend-codex', backend === 'codex');
+      bb.classList.toggle('cc-backend-kimi', backend === 'kimi');
     }
     if (m.switched) {
       // Own row per switch - addToolChip would glue repeated switches (and
@@ -723,12 +726,10 @@ webviewApi.onMessage(function (msg) {
   } else if (m.name === 'turnDone') {
     endReasoning();
     endStreamBubble();
-    setBusy(false);
   } else if (m.name === 'error') {
     endReasoning();
     endStreamBubble();
     addBubble('cc-error', escapeHtml(m.text));
-    setBusy(false);
   } else if (m.name === 'confirmWrite') {
     var c = el('cc-confirm');
     if (!c) return;

@@ -10,6 +10,7 @@ const nodePath = require('path');
 const nodeChildProcess = require('child_process');
 
 import { MCP_PROXY_SOURCE } from './mcpSource';
+import { CodexClient, splitArgs } from './codex';
 import { I18nStrings, getI18n, fmt } from './i18n';
 
 function escapeHtml(str: string): string {
@@ -62,7 +63,7 @@ joplin.plugins.register({
       'backend': {
         section: 'joplinAide', type: SETTING_STRING, value: 'claude', public: true,
         isEnum: true,
-        options: { claude: 'Claude Code', copilot: 'GitHub Copilot', kimi: 'Kimi (Moonshot)' },
+        options: { claude: 'Claude Code', copilot: 'GitHub Copilot', codex: 'Codex', kimi: 'Kimi (Moonshot)' },
         label: t.sBackend,
         description: t.sBackendDesc,
       },
@@ -160,6 +161,38 @@ joplin.plugins.register({
         label: t.sCopilotArgs,
         description: t.sCopilotArgsDesc,
       },
+      // Codex speaks JSON-RPC to `codex app-server`. The plugin never writes
+      // the user's ~/.codex config: model and effort ride each request.
+      'codexPath': {
+        section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
+        subType: 'file_path',
+        label: t.sCodexPath,
+        description: t.sCodexPathDesc,
+      },
+      'codexModel': {
+        section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
+        label: t.sCodexModel,
+        description: t.sCodexModelDesc,
+      },
+      'codexEffort': {
+        section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
+        isEnum: true,
+        options: { '': 'Default', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra high' },
+        label: t.sCodexEffort,
+        description: t.sCodexEffortDesc,
+      },
+      // Defaults mirror the Claude backend's WebSearch,WebFetch,Read: file
+      // reads (attachments) pass without a card, and live web search is on.
+      'codexAllowTools': {
+        section: 'joplinAide', type: SETTING_STRING, value: 'shell(cat),shell(Get-Content),shell(type)', public: true,
+        label: t.sCodexTools,
+        description: t.sCodexToolsDesc,
+      },
+      'codexExtraArgs': {
+        section: 'joplinAide', type: SETTING_STRING, value: '-c web_search=live', public: true,
+        label: t.sCodexArgs,
+        description: t.sCodexArgsDesc,
+      },
       'memoryEnabled': {
         section: 'joplinAide', type: SETTING_BOOL, value: false, public: true,
         label: t.sMemory,
@@ -194,6 +227,7 @@ joplin.plugins.register({
       '    <select id="cc-backend" title="' + escapeHtml(t.titleBackend) + '">',
       '      <option value="claude">Claude</option>',
       '      <option value="copilot">Copilot</option>',
+      '      <option value="codex">Codex</option>',
       '      <option value="kimi">Kimi</option>',
       '    </select>',
       '    <button id="cc-history" title="' + escapeHtml(t.titleHistory) + '">&#x1F550;</button>',
@@ -213,8 +247,10 @@ joplin.plugins.register({
       '    <div class="cc-input-buttons">',
       '      <button id="cc-attach" title="' + escapeHtml(t.titleAttach) + '">&#x1F4CE;</button>',
       '      <input id="cc-file" type="file" multiple style="display:none;" />',
-      '      <button id="cc-send" title="' + escapeHtml(t.titleSend) + '">&#x27A4;</button>',
-      '      <button id="cc-stop" title="' + escapeHtml(t.titleStop) + '" style="display:none;">&#x25A0;</button>',
+      '      <button id="cc-send" title="' + escapeHtml(t.titleSend) + '">'
+        + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>',
+      '      <button id="cc-stop" title="' + escapeHtml(t.titleStop) + '" style="display:none;">'
+        + '<svg width="10" height="10" viewBox="0 0 10 10"><rect width="10" height="10" rx="2" fill="currentColor"/></svg></button>',
       '    </div>',
       '  </div>',
       '</div>',
@@ -962,6 +998,9 @@ joplin.plugins.register({
 
     /* ---------- agent process management ---------- */
     let child: any = null;
+    let startingRequest = false;
+    let requestGeneration = 0;
+    let stopCodex: (() => void) | null = null;
     let sessionId: string = '';
     // Which backend the RUNNING child belongs to (event formats differ).
     let runBackend: string = 'claude';
@@ -982,6 +1021,9 @@ joplin.plugins.register({
     // the wrapper shell - taskkill /T /F takes the whole process tree down so
     // the claude process (and its MCP proxy) cannot survive the stop button.
     function killChild(): void {
+      requestGeneration++;
+      if (apiInFlight) apiAborted = true;
+      if (stopCodex) { const stop = stopCodex; stopCodex = null; stop(); return; }
       // Abort the Kimi API request, if one is streaming.
       if (apiReq) {
         apiAborted = true;
@@ -1392,14 +1434,29 @@ joplin.plugins.register({
     }
 
     async function runClaude(prompt: string): Promise<void> {
-      if (child || apiInFlight) {
+      if (startingRequest || child || apiInFlight) {
         // Safety net (the webview also locks sending while busy). Reset the
         // webview's busy lock or it would stay disabled forever.
         post({ name: 'error', text: t.errAlreadyRunning });
         post({ name: 'busy', busy: true });
         return;
       }
+      startingRequest = true;
+      const generation = requestGeneration;
+      post({ name: 'busy', busy: true });
+      try {
+        await startBackendTurn(prompt, generation);
+      } catch (error: any) {
+        post({ name: 'error', text: String(error?.message || error) });
+      } finally {
+        startingRequest = false;
+        post({ name: 'busy', busy: !!child || apiInFlight });
+      }
+    }
+
+    async function startBackendTurn(prompt: string, generation: number): Promise<void> {
       const backend = String((await joplin.settings.value('backend')) || 'claude');
+      if (generation !== requestGeneration) return;
       // Kimi is served by the in-process OpenAI-compatible engine, not a CLI.
       if (backend === 'kimi') { await runKimiApi(prompt); return; }
       if (sessionId && sessionBackend && sessionBackend !== backend) { sessionId = ''; sessionAllowed = {}; }
@@ -1450,6 +1507,11 @@ joplin.plugins.register({
       let bin: string;
       let args: string[];
 
+      if (generation !== requestGeneration) return;
+      if (backend === 'codex') {
+        await runCodex(prompt, systemPrompt, generation);
+        return;
+      }
       if (backend === 'copilot') {
         bin = String((await joplin.settings.value('copilotPath')) || '').trim() || 'copilot';
         const model = await joplin.settings.value('copilotModel');
@@ -1496,6 +1558,7 @@ joplin.plugins.register({
         if (extraArgs) { args.push(extraArgs); }
       }
 
+      if (generation !== requestGeneration) return;
       if (!cliExists(bin)) {
         const installCmd = backend === 'copilot'
           ? 'npm install -g @github/copilot'
@@ -1553,8 +1616,10 @@ joplin.plugins.register({
       child.stdin.end();
 
       let stdoutBuf = '';
+      const runningChild = child;
       const stderrChunks: any[] = [];
       child.stdout.on('data', (chunk: any) => {
+        if (child !== runningChild) return;
         stdoutBuf += chunk.toString('utf8');
         let idx;
         while ((idx = stdoutBuf.indexOf('\n')) >= 0) {
@@ -1565,11 +1630,13 @@ joplin.plugins.register({
       });
       child.stderr.on('data', (chunk: any) => { stderrChunks.push(chunk); });
       child.on('error', (err: any) => {
+        if (child !== runningChild) return;
         post({ name: 'error', text: fmt(t.errProcess, { bin, err: String(err && err.message ? err.message : err) }) });
-        post({ name: 'busy', busy: false });
         child = null;
+        post({ name: 'busy', busy: startingRequest || apiInFlight });
       });
       child.on('close', (code: number) => {
+        if (child !== runningChild) return;
         const stderrText = stderrChunks.length ? decodeOutput(Buffer.concat(stderrChunks)).trim() : '';
         if (code !== 0 && stderrText) {
           post({ name: 'error', text: fmt(t.errExited, { bin, code, err: stderrText.slice(0, 500) }) });
@@ -1580,9 +1647,244 @@ joplin.plugins.register({
             sessionBackend = '';
           }
         }
-        post({ name: 'busy', busy: false });
         child = null;
+        post({ name: 'busy', busy: startingRequest || apiInFlight });
       });
+    }
+
+    // Codex runs as `codex app-server` (JSON-RPC over stdio), one process per
+    // turn like the other CLIs. The Joplin tools reach it through the same MCP
+    // proxy; Codex asks the client before every MCP tool call, and those calls
+    // are accepted here because Aide's own write tools already raise the
+    // confirmation cards. Shell commands / file edits go through the cards.
+    async function runCodex(prompt: string, instructions: string, generation: number): Promise<void> {
+      let bin = String((await joplin.settings.value('codexPath')) || '').trim() || 'codex';
+      if (generation !== requestGeneration) return;
+      // Prefer the desktop app's native binary on Windows: npm installs a
+      // .cmd launcher, and prompts must never pass through cmd.exe.
+      if (process.platform === 'win32' && bin === 'codex') {
+        const desktop = nodePath.join(process.env.LOCALAPPDATA || '', 'Programs', 'OpenAI', 'Codex', 'bin', 'codex.exe');
+        if (nodeFs.existsSync(desktop)) bin = desktop;
+      }
+      if (!cliExists(bin)) {
+        post({ name: 'error', text: fmt(t.errCliMissing, { bin, cmd: 'npm install -g @openai/codex' }) });
+        return;
+      }
+      const model = String((await joplin.settings.value('codexModel')) || '').trim();
+      const effort = String((await joplin.settings.value('codexEffort')) || '').trim();
+      const extraArgs = splitArgs(String((await joplin.settings.value('codexExtraArgs')) || ''));
+      // Approvals granted without a card: "shell", "shell(git status)",
+      // "write", "mcp(node_repl)". Same shape as Copilot's --allow-tool list,
+      // except that everything NOT listed asks instead of being denied.
+      const allowRules = String((await joplin.settings.value('codexAllowTools')) || '')
+        .split(',').map((s: string) => s.trim()).filter((s: string) => !!s);
+      const allowed = (kind: string, detail: string): boolean => allowRules.some((rule) => {
+        const m = /^(\w+)(?:\((.*)\))?$/.exec(rule);
+        return !!m && m[1] === kind && (!m[2] || detail.indexOf(m[2]) === 0);
+      });
+      if (generation !== requestGeneration) return;
+
+      const input: any[] = [{ type: 'text', text: prompt }];
+      for (const a of pendingAttachments) {
+        if (/\.(png|jpe?g|webp|gif)$/i.test(a.fileName)) {
+          input.push({ type: 'localImage', path: a.filePath });
+        } else input[0].text += '\n[The user attached a file. Read it from disk:] ' + a.filePath;
+      }
+      runBackend = 'codex';
+      record('user', prompt);
+      pendingAttachments = [];
+      post({ name: 'attachmentsCleared' });
+      post({ name: 'busy', busy: true });
+
+      let finished = false;
+      let reasoningOpen = false;
+      let lastError = '';
+      let client: CodexClient;
+      // The turn is over (completed, failed, or stopped). The panel stays busy
+      // until the process has actually exited - see the 'close' handler.
+      const finish = (error?: Error): void => {
+        if (finished) return;
+        finished = true;
+        stopCodex = null;
+        if (error) post({ name: 'error', text: String(error.message || error).slice(0, 1000) });
+        post({ name: 'turnDone', isError: !!error });
+        client.close();
+      };
+      const onRequest = (message: any): void => {
+        const p = message.params || {};
+        const reply = (result: any) => { if (!finished) client.send({ id: message.id, result }); };
+        switch (message.method) {
+          case 'mcpServer/elicitation/request': {
+            // Per-call approval for MCP tools. Aide's own server needs no
+            // second prompt; other servers from the user's Codex config get
+            // a confirmation card like any other side effect.
+            const meta = p._meta || {};
+            if (meta.codex_approval_kind !== 'mcp_tool_call') { reply({ action: 'decline' }); return; }
+            const server = String(p.serverName || '');
+            if (server === 'joplin' || allowed('mcp', server)) { reply({ action: 'accept', content: {} }); return; }
+            void requestConfirm('Codex: ' + String(p.message || server), 'codex:mcp:' + server)
+              .then((ok) => reply(ok ? { action: 'accept', content: {} } : { action: 'decline' }));
+            return;
+          }
+          case 'item/commandExecution/requestApproval': {
+            // On Windows `command` is the powershell.exe wrapper line; the
+            // user's actual command is in commandActions. Match rules and
+            // label the card with the inner command.
+            const inner = (p.commandActions || []).map((a: any) => String(a.command || '')).filter((s: string) => !!s);
+            const command = inner.join(' ; ') || String(p.command || p.reason || 'command');
+            if (inner.concat(String(p.command || '')).some((c: string) => allowed('shell', c))) { reply({ decision: 'accept' }); return; }
+            void requestConfirm('Codex: ' + command, 'codex:' + message.method)
+              .then((ok) => reply({ decision: ok ? 'accept' : 'decline' }));
+            return;
+          }
+          case 'item/fileChange/requestApproval': {
+            if (allowed('write', '')) { reply({ decision: 'accept' }); return; }
+            void requestConfirm('Codex: ' + String(p.reason || p.grantRoot || 'file change'), 'codex:' + message.method)
+              .then((ok) => reply({ decision: ok ? 'accept' : 'decline' }));
+            return;
+          }
+          case 'item/permissions/requestApproval':
+            // Extra sandbox permissions (network, writes outside cwd): not
+            // something a note assistant needs. Grant nothing.
+            reply({ permissions: {}, scope: 'turn' });
+            return;
+          case 'item/tool/requestUserInput': {
+            // Codex's own question tool -> the panel's option buttons.
+            // Free-text questions have no UI here; they get an empty answer.
+            void (async () => {
+              const answers: any = {};
+              for (const q of (p.questions || [])) {
+                const options = (q.options || []).map((o: any) => typeof o === 'string' ? o : String(o.label || '')).filter((s: string) => !!s);
+                const a = options.length && !finished ? await requestAnswer(String(q.question || q.header || ''), options) : '';
+                answers[q.id] = { answers: a ? [a] : [] };
+              }
+              reply({ answers });
+            })();
+            return;
+          }
+          default:
+            if (!finished) client.send({ id: message.id, error: { code: -32601, message: 'Unsupported request: ' + message.method } });
+        }
+      };
+      const onMessage = (message: any): void => {
+        if (finished) return;
+        if (message.id !== undefined && message.method) { onRequest(message); return; }
+        const p = message.params || {};
+        const item = p.item || {};
+        switch (message.method) {
+          case 'item/started':
+            if (item.type === 'agentMessage') { reasoningOpen = false; post({ name: 'assistantStart' }); }
+            else if (item.type === 'reasoning') { reasoningOpen = true; post({ name: 'reasoningStart' }); }
+            else if (item.type === 'mcpToolCall' || item.type === 'commandExecution' || item.type === 'fileChange') {
+              reasoningOpen = false;
+              const tool = String(item.tool || item.command || item.type);
+              record('tool', tool);
+              post({ name: 'toolUse', tool });
+            }
+            break;
+          case 'item/agentMessage/delta':
+            if (p.delta) post({ name: 'assistantDelta', text: p.delta });
+            break;
+          case 'item/reasoning/summaryTextDelta':
+            if (!reasoningOpen) { reasoningOpen = true; post({ name: 'reasoningStart' }); }
+            if (p.delta) post({ name: 'reasoningDelta', text: p.delta });
+            break;
+          case 'item/reasoning/summaryPartAdded':
+            if (reasoningOpen) post({ name: 'reasoningDelta', text: '\n\n' });
+            break;
+          case 'item/completed':
+            if (item.type === 'agentMessage' && item.text) {
+              record('assistant', item.text);
+              post({ name: 'assistantText', text: item.text });
+            }
+            break;
+          case 'error':
+            // Turn-level errors; the failing turn/completed that follows may
+            // carry no message of its own.
+            if (!p.willRetry && p.error && p.error.message) lastError = String(p.error.message);
+            break;
+          case 'turn/completed': {
+            const turn = p.turn || {};
+            if (turn.status === 'failed') finish(new Error((turn.error && turn.error.message) || lastError || 'Codex turn failed'));
+            else finish();
+            break;
+          }
+        }
+      };
+
+      try {
+        client = new CodexClient(bin, onMessage, (error) => finish(error), extraArgs);
+      } catch (error: any) {
+        post({ name: 'error', text: String(error && error.message ? error.message : error) });
+        return;
+      }
+      child = client.process;
+      client.process.on('close', () => {
+        if (child !== client.process) return;
+        child = null;
+        post({ name: 'busy', busy: startingRequest || apiInFlight });
+      });
+      // Stop button / new session / rewind: drop open cards, kill the tree.
+      stopCodex = () => {
+        for (const id of Object.keys(pendingConfirms)) {
+          const pending = pendingConfirms[id];
+          clearTimeout(pending.timer); delete pendingConfirms[id];
+          post({ name: 'confirmGone', requestId: id }); pending.resolve(false);
+        }
+        for (const id of Object.keys(pendingQuestions)) {
+          const pending = pendingQuestions[id];
+          clearTimeout(pending.timer); delete pendingQuestions[id];
+          post({ name: 'questionGone', requestId: id });
+          pending.resolve('Cancelled by user.');
+        }
+        if (finished) return;
+        finished = true;
+        stopCodex = null;
+        post({ name: 'turnDone', isError: false });
+        client.kill();
+      };
+
+      try {
+        await client.request('initialize', { clientInfo: { name: 'joplin_aide', version: '1.3.1' } });
+        if (finished) return;
+        client.send({ method: 'initialized', params: {} });
+        const params: any = {
+          cwd: dataDir,
+          // 'untrusted': only Codex's known-safe read commands run without
+          // asking; everything else raises a card. Same footing as the Claude
+          // backend, where every non-joplin tool goes through approval_prompt.
+          approvalPolicy: 'untrusted',
+          sandbox: 'read-only',
+          developerInstructions: instructions,
+          config: { 'mcp_servers.joplin': {
+            command: process.execPath, args: [proxyPath],
+            env: { ELECTRON_RUN_AS_NODE: '1', JOPLIN_AIDE_PORT: String(controlPort) },
+            required: true, tool_timeout_sec: 180,
+          } },
+        };
+        if (model) params.model = model;
+        let result: any = null;
+        if (sessionId) {
+          try {
+            result = await client.request('thread/resume', { ...params, threadId: sessionId, excludeTurns: true });
+          } catch (error: any) {
+            // Thread gone (cleaned ~/.codex, foreign id from history...):
+            // say so and continue in a fresh thread instead of failing every
+            // retry with the same error.
+            if (finished) return;
+            post({ name: 'error', text: fmt(t.codexResumeFailed, { err: String(error && error.message ? error.message : error).slice(0, 300) }) });
+            sessionId = '';
+            sessionAllowed = {};
+          }
+        }
+        if (!result) result = await client.request('thread/start', params);
+        if (finished) return;
+        sessionId = String(result.thread.id);
+        if (currentConv) { currentConv.sessionId = sessionId; currentConv.backend = 'codex'; saveHistory(); }
+        const turnParams: any = { threadId: sessionId, input };
+        if (effort) turnParams.effort = effort;
+        await client.request('turn/start', turnParams);
+      } catch (error: any) { finish(error); }
     }
 
     function handleClaudeEvent(line: string): void {
@@ -1711,9 +2013,9 @@ joplin.plugins.register({
         // reload looks like a brand-new empty conversation.
         await pushNoteContext();
         if (currentConv && currentConv.messages && currentConv.messages.length) {
-          post({ name: 'conversationLoaded', id: currentConv.id, messages: currentConv.messages, archiveSegments: currentConv.archiveSegments || 0 });
+          post({ name: 'conversationLoaded', id: currentConv.id, messages: currentConv.messages, archiveSegments: currentConv.archiveSegments || 0, busy: startingRequest || !!child || apiInFlight });
         }
-        post({ name: 'busy', busy: !!child || apiInFlight });
+        post({ name: 'busy', busy: startingRequest || !!child || apiInFlight });
         post({ name: 'backendState', backend: String((await joplin.settings.value('backend')) || 'claude') });
         post({ name: 'privacyNotice', show: (await joplin.settings.value('privacyNoticeDismissed')) !== true });
         for (const cid of Object.keys(pendingConfirms)) {
@@ -1743,7 +2045,7 @@ joplin.plugins.register({
         // Dropdown switch from the panel header. Takes effect on the next
         // message: runClaude reads the setting per turn, and the
         // lastBackend guard starts a fresh CLI session automatically.
-        const next = (msg.value === 'copilot' || msg.value === 'kimi') ? msg.value : 'claude';
+        const next = (msg.value === 'copilot' || msg.value === 'kimi' || msg.value === 'codex') ? msg.value : 'claude';
         const cur = String((await joplin.settings.value('backend')) || 'claude');
         if (next !== cur) {
           await joplin.settings.setValue('backend', next);
@@ -1775,7 +2077,7 @@ joplin.plugins.register({
             sessionBackend = '';
             sessionAllowed = {};
             saveHistory();
-            post({ name: 'conversationLoaded', id: currentConv.id, messages: currentConv.messages, archiveSegments: currentConv.archiveSegments || 0 });
+            post({ name: 'conversationLoaded', id: currentConv.id, messages: currentConv.messages, archiveSegments: currentConv.archiveSegments || 0, busy: startingRequest || !!child || apiInFlight });
             post({ name: 'setInput', text: String(msg.text || '') });
           }
         }
@@ -1802,7 +2104,7 @@ joplin.plugins.register({
           // Pre-dual-backend conversations carry no backend field - they
           // were all Claude sessions.
           sessionBackend = sessionId ? (conv.backend || 'claude') : '';
-          post({ name: 'conversationLoaded', id: conv.id, messages: conv.messages || [], archiveSegments: conv.archiveSegments || 0 });
+          post({ name: 'conversationLoaded', id: conv.id, messages: conv.messages || [], archiveSegments: conv.archiveSegments || 0, busy: startingRequest || !!child || apiInFlight });
         }
       } else if (msg.name === 'loadOlder') {
         // Scroll-up pagination: hand back one archived segment (seq counts

@@ -405,19 +405,23 @@
   justify-content: flex-end;
   gap: 4px;
 }
+/* Round 28px icon buttons; send/stop are inline SVGs so the glyph does not
+   depend on the system font (the old ➤ rendered as a fat emoji on some). */
 #cc-attach, #cc-send, #cc-stop {
   border: none;
-  border-radius: 8px;
-  width: 34px;
+  border-radius: 50%;
+  width: 28px;
   height: 28px;
+  padding: 0;
   cursor: pointer;
   font-size: 14px;
   line-height: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.12s ease, filter 0.12s ease;
+  transition: background 0.12s ease, filter 0.12s ease, transform 0.12s ease;
 }
+#cc-send svg, #cc-stop svg { display: block; }
 #cc-attach {
   background: transparent;
   color: var(--joplin-color-faded, #999);
@@ -431,11 +435,13 @@
   color: #fff;
 }
 #cc-send:hover { filter: brightness(1.15); }
+#cc-send:active { transform: scale(0.94); }
 #cc-stop {
-  background: #c0392b;
-  color: #fff;
+  background: var(--joplin-color, #ddd);
+  color: var(--joplin-background-color, #1e1e1e);
 }
-#cc-stop:hover { filter: brightness(1.15); }
+#cc-stop:hover { filter: brightness(0.9); }
+#cc-stop:active { transform: scale(0.94); }
 
 /* ---- markdown elements inside message bubbles ---- */
 .cc-msg p { margin: 0 0 6px; }

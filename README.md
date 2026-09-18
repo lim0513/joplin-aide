@@ -1,6 +1,6 @@
 # Joplin Aide
 
-An AI assistant chat panel for [Joplin](https://joplinapp.org/) — ask about your notes and let the AI read, search, create and edit them, powered by the CLI you already have ([Claude Code](https://claude.com/claude-code) or [GitHub Copilot CLI](https://github.com/features/copilot/cli)) or the [Kimi (Moonshot)](https://platform.moonshot.cn/) API — no CLI required.
+An AI assistant chat panel for [Joplin](https://joplinapp.org/) — ask about your notes and let the AI read, search, create and edit them, powered by the CLI you already have ([Claude Code](https://claude.com/claude-code), [GitHub Copilot CLI](https://github.com/features/copilot/cli) or [OpenAI Codex CLI](https://developers.openai.com/codex/cli)) or the [Kimi (Moonshot)](https://platform.moonshot.cn/) API — no CLI required.
 
 Formerly published as *Joplin Claude*.
 
@@ -9,7 +9,7 @@ Formerly published as *Joplin Claude*.
 
 ## Features
 
-- **Multiple backends** — Claude Code or GitHub Copilot CLI, or the **Kimi (Moonshot) API** (no CLI needed); a pill button in the panel header switches engines with one click (the next message starts a fresh session on the new engine). The Kimi backend adds context caching, built-in web search, image input, and live reasoning display for kimi-k3
+- **Multiple backends** — Claude Code, GitHub Copilot or OpenAI Codex CLI, or the **Kimi (Moonshot) API** (no CLI needed); a pill button in the panel header switches engines with one click (the next message starts a fresh session on the new engine). The Kimi backend adds context caching, built-in web search, image input, and live reasoning display for kimi-k3
 - **Chat panel** — streaming replies rendered as full Markdown (headings, tables, code, clickable links), tool-activity chips, and a header showing which note the AI is targeting (updates live as you switch notes)
 - **19 note tools** — list/search/read notes and notebooks, create/update/delete notes, tags, to-dos, note attachments, rich search syntax (`tag:`, `type:todo`, `updated:day-7`, ...)
 - **Write confirmation** — every create/update/delete waits for your Approve/Decline in the panel, with an "Always (this session)" option per request kind; an optional (dangerous, off by default) auto mode approves everything. Enforced server-side, so it applies to both backends
@@ -49,6 +49,7 @@ The MCP proxy is a zero-dependency script shipped inside the plugin. The CLI lau
 - At least one backend CLI, installed and logged in:
   - [Claude Code](https://claude.com/claude-code) — `claude` on PATH (or set the full path in settings)
   - [GitHub Copilot CLI](https://github.com/features/copilot/cli) — `copilot` on PATH (or set the full path in settings); included with all Copilot plans, Free tier has a monthly request limit
+  - [OpenAI Codex CLI](https://developers.openai.com/codex/cli) — `codex` on PATH or the Codex desktop app (found automatically on Windows); run `codex login` once. Uses `codex app-server`, so an existing Codex install and config are picked up as-is
 
 ## Settings
 
