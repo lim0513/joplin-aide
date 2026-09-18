@@ -11,7 +11,7 @@ Formerly published as *Joplin Claude*.
 
 - **Multiple backends** — Claude Code, GitHub Copilot, OpenAI Codex or Google Antigravity CLI, or the **Kimi (Moonshot) API** (no CLI needed); a pill button in the panel header switches engines with one click (the next message starts a fresh session on the new engine). The Kimi backend adds context caching, built-in web search, image input, and live reasoning display for kimi-k3
 - **Chat panel** — streaming replies rendered as full Markdown (headings, tables, code, clickable links), tool-activity chips, and a header showing which note the AI is targeting (updates live as you switch notes)
-- **19 note tools** — list/search/read notes and notebooks, create/update/delete notes, tags, to-dos, note attachments, rich search syntax (`tag:`, `type:todo`, `updated:day-7`, ...)
+- **21 note tools** — list/search/read notes and notebooks, create/update/delete notes, tags, to-dos, note attachments, rich search syntax (`tag:`, `type:todo`, `updated:day-7`, ...)
 - **Write confirmation** — every create/update/delete waits for your Approve/Decline in the panel, with an "Always (this session)" option per request kind; an optional (dangerous, off by default) auto mode approves everything. Enforced server-side, so it applies to both backends
 - **Interactive questions** — the AI can ask a multiple-choice question mid-task; options render as clickable buttons and your click is returned as the answer
 - **Attachments** — paperclip button, drag & drop, or paste an image straight from the clipboard

@@ -2,6 +2,8 @@
 
 _Read of the official specs: `ai_chat`, `ai_mcp`, `ai_sidebar_tools` (dev docs, July 2026). This is our internal read, not an official position._
 
+_Status (2026-09): historical snapshot, written when Aide had two backends. Since then Codex and Antigravity were added (four CLI backends plus Kimi), and CLAUDE.md records the decision **not** to build a generic API-key backend: Joplin's own AI panel covers that path, and Aide's new work targets CLI-side capabilities only. Recommendation 1 below (a `joplin.ai.chat()` backend) is therefore on hold; recommendations 2 and 3 still stand._
+
 ## What Joplin 3.7 actually ships
 
 Four distinct pieces, all framework-level (no consumer chatbot bundled beyond the sidebar):
@@ -22,10 +24,10 @@ Four distinct pieces, all framework-level (no consumer chatbot bundled beyond th
 
 | Dimension | Joplin built-in AI | Joplin Aide |
 |---|---|---|
-| Model access | BYO API key, per-token billing | Claude Code / Copilot **CLI subscriptions** (flat) |
+| Model access | BYO API key, per-token billing | Claude Code / Copilot / Codex / Antigravity **CLI subscriptions** (flat), or the Kimi API |
 | Agent loop | Yes (sidebar, MAX_STEPS 8) | Yes (the CLI's own loop) |
 | Scope | Editor-coupled + workspace tools | Whole workspace via our MCP bridge |
-| Tools | 10 fixed built-ins + plugin-registered | Our 19 note tools |
+| Tools | 10 fixed built-ins + plugin-registered | Our 21 note tools (plus `ask_user`) |
 | Write safety | per-tool on/off toggles | interactive Approve/Decline cards, session rules |
 | Memory / history | none built-in | long-term memory note + conversation history/resume |
 | Custom question UI | none | `ask_user` clickable options |
@@ -35,7 +37,7 @@ Four distinct pieces, all framework-level (no consumer chatbot bundled beyond th
 
 ## Opportunities (this helps us more than it hurts)
 
-1. **A fourth Aide backend on `joplin.ai.chat()`.** Serves users who run **no CLI at all** — including local Ollama — by reusing their configured provider. Because the v1 primitive is single-shot with no tool-calling, Aide keeps its own agent loop and note tools; we'd only borrow the provider/transport/keychain layer. Removes the biggest onboarding barrier (installing + logging into a CLI).
+1. **An Aide backend on `joplin.ai.chat()`.** (On hold, see the status note at the top.) Serves users who run **no CLI at all** — including local Ollama — by reusing their configured provider. Because the v1 primitive is single-shot with no tool-calling, Aide keeps its own agent loop and note tools; we'd only borrow the provider/transport/keychain layer. Removes the biggest onboarding barrier (installing + logging into a CLI).
 
 2. **Register Aide's tools via `joplin.ai.tools.register()`.** Our note operations could appear in Joplin's own sidebar and over its MCP endpoint — reach beyond our panel for free. Worth prototyping once the seam ships in stable.
 

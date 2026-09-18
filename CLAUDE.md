@@ -2,7 +2,7 @@
 
 Joplin 官方内置了 AI Chat 面板，配置方式是任意 OpenAI 兼容端点（`https://api.openai.com/v1`、Ollama 的 `http://localhost:11434/v1` 等）。
 
-**决定：不做通用 OpenAI 兼容后端。** 官方已经覆盖这块，重复投入没意义。aide 的差异化收在两个 **CLI 后端**（Claude Code / GitHub Copilot）：它们走用户自己的订阅、不按 token 计费、自带 agent loop 和工具权限，这是官方那条纯 API 路径给不了的。今后新功能只针对官方不支持的 CLI 侧能力。
+**决定：不做通用 OpenAI 兼容后端。** 官方已经覆盖这块，重复投入没意义。aide 的差异化收在 **CLI 后端**（Claude Code / GitHub Copilot / OpenAI Codex / Google Antigravity）：它们走用户自己的订阅、不按 token 计费、自带 agent loop 和工具权限，这是官方那条纯 API 路径给不了的。今后新功能只针对官方不支持的 CLI 侧能力。
 
 评估过一次，结论记在这里以免重复讨论：
 

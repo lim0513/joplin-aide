@@ -67,7 +67,7 @@ First **CLI-free** backend: instead of shelling out, the plugin talks directly t
 - [ ] Prompt presets (per-task system prompt snippets)
 - [x] **OpenAI Codex CLI backend** — shipped in 1.3.1 on `codex app-server` (JSON-RPC over stdio) rather than `codex exec`: the MCP server config rides the `thread/start` request, so no CODEX_HOME isolation is needed, and Codex's per-call MCP approval (`mcpServer/elicitation/request`) is answered by the plugin
 - [x] **Google Antigravity CLI backend** — shipped in 1.3.2 on agy's stream-json driver mode (`--input-format stream-json --output-format stream-json`, one process per turn, `--conversation` resume). MCP config rides a plugin-owned workspace (`.agents/mcp_config.json`); headless agy cannot prompt, so the plugin adds `mcp(joplin/*)` to the user's `permissions.allow` and AUTO MODE maps to `--dangerously-skip-permissions`
-- [ ] **`joplin.ai.chat()` backend** — Joplin 3.7 adds a built-in provider abstraction (OpenAI-compatible / Anthropic / Joplin Cloud, keys in settings). A fourth Aide backend on top of it would serve users who run no CLI at all (incl. local Ollama), reusing their configured provider. Note the v1 primitive is single-shot text with no tool-calling, so Aide's agent loop + note tools would still run our side
+- [ ] **`joplin.ai.chat()` backend** — Joplin 3.7 adds a built-in provider abstraction (OpenAI-compatible / Anthropic / Joplin Cloud, keys in settings). An Aide backend on top of it would serve users who run no CLI at all (incl. local Ollama), reusing their configured provider. On hold: CLAUDE.md (2026-09) rules out a generic API-key backend since Joplin's own panel covers it; this only stays listed because it would borrow Joplin's provider layer rather than duplicate it. Note the v1 primitive is single-shot text with no tool-calling, so Aide's agent loop + note tools would still run our side
 - [ ] **Register Aide's tools with the official MCP server / `joplin.ai.tools.register()`** — 3.7 ships a built-in MCP server and (in the sidebar spec) a `joplin.ai.tools.register()` plugin seam. Evaluate exposing Aide's note operations there, and whether our own MCP stdio proxy can be retired once Joplin's HTTP MCP endpoint is stable
 - [ ] Per-conversation model override
 
@@ -83,7 +83,7 @@ Clipper port, and a **tool-using AI sidebar** (agent loop, session + workspace +
 plugin-registered tools). This overlaps Aide's space, so worth tracking
 deliberately — but the positioning stays distinct: Joplin's sidebar is
 BYO-API-key (per-token billing, editor-scoped) whereas Aide runs on the
-Claude Code / Copilot **CLI subscriptions** with a full agentic loop, write
+Claude Code / Copilot / Codex / Antigravity **CLI subscriptions** with a full agentic loop, write
 confirmations, long-term memory and history. The official work is more an
 opportunity (new backend, tool-registration seam, possibly retiring our MCP
 proxy) than a threat. See `docs/joplin-ai-assessment.md` for the full read.
