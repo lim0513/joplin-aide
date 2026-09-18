@@ -63,7 +63,7 @@ joplin.plugins.register({
       'backend': {
         section: 'joplinAide', type: SETTING_STRING, value: 'claude', public: true,
         isEnum: true,
-        options: { claude: 'Claude Code', copilot: 'GitHub Copilot', codex: 'Codex', kimi: 'Kimi (Moonshot)' },
+        options: { claude: 'Claude Code', copilot: 'GitHub Copilot', codex: 'Codex', antigravity: 'Antigravity', kimi: 'Kimi (Moonshot)' },
         label: t.sBackend,
         description: t.sBackendDesc,
       },
@@ -193,6 +193,37 @@ joplin.plugins.register({
         label: t.sCodexArgs,
         description: t.sCodexArgsDesc,
       },
+      // Antigravity (agy) has no per-run permission flags: headless mode
+      // soft-denies anything not pre-allowed in the user's own settings.json,
+      // so tool grants live there (see ensureAntigravityPermission).
+      'antigravityPath': {
+        section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
+        subType: 'file_path',
+        label: t.sAgyPath,
+        description: t.sAgyPathDesc,
+      },
+      'antigravityModel': {
+        section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
+        label: t.sAgyModel,
+        description: t.sAgyModelDesc,
+      },
+      'antigravityAllowTools': {
+        section: 'joplinAide', type: SETTING_STRING, value: 'read_url(*)', public: true,
+        label: t.sAgyTools,
+        description: t.sAgyToolsDesc,
+      },
+      'antigravityExtraArgs': {
+        section: 'joplinAide', type: SETTING_STRING, value: '', public: true,
+        label: t.sAgyArgs,
+        description: t.sAgyArgsDesc,
+      },
+      // Not user-facing: the permission rules the plugin last wrote into the
+      // user's agy settings.json, so a rule removed from antigravityAllowTools
+      // can be taken back out without touching rules the user added by hand.
+      'antigravityManagedRules': {
+        section: 'joplinAide', type: SETTING_STRING, value: '', public: false,
+        label: 'Antigravity rules managed by Aide',
+      },
       'memoryEnabled': {
         section: 'joplinAide', type: SETTING_BOOL, value: false, public: true,
         label: t.sMemory,
@@ -228,6 +259,7 @@ joplin.plugins.register({
       '      <option value="claude">Claude</option>',
       '      <option value="copilot">Copilot</option>',
       '      <option value="codex">Codex</option>',
+      '      <option value="antigravity">Antigravity</option>',
       '      <option value="kimi">Kimi</option>',
       '    </select>',
       '    <button id="cc-history" title="' + escapeHtml(t.titleHistory) + '">&#x1F550;</button>',
@@ -896,6 +928,58 @@ joplin.plugins.register({
         },
       },
     }, null, 2), 'utf8');
+    // Antigravity reads MCP servers from <workspace>/.agents/mcp_config.json.
+    // The plugin runs agy with its own throwaway workspace so this file, and
+    // anything the agent writes with its file tools, never touches a user
+    // project. Global config (~/.gemini/config/mcp_config.json) is left alone.
+    const agyWorkspaceDir = nodePath.join(dataDir, 'antigravity-workspace');
+    try {
+      nodeFs.mkdirSync(nodePath.join(agyWorkspaceDir, '.agents'), { recursive: true });
+      nodeFs.writeFileSync(nodePath.join(agyWorkspaceDir, '.agents', 'mcp_config.json'), JSON.stringify({
+        mcpServers: {
+          joplin: {
+            command: process.execPath,
+            args: [proxyPath],
+            env: {
+              ELECTRON_RUN_AS_NODE: '1',
+              JOPLIN_AIDE_PORT: String(controlPort),
+            },
+          },
+        },
+      }, null, 2), 'utf8');
+    } catch (err) { console.error('Joplin Aide: failed to write the Antigravity workspace', err); }
+
+    // Headless agy cannot ask, and unconfigured MCP tools default to Ask, so
+    // the Joplin tools must be pre-allowed in the user's agy settings. This
+    // keeps permissions.allow in sync with the rules Aide owns: mcp(joplin/*)
+    // plus the "additional allowed tools" setting. Rules Aide wrote earlier
+    // but no longer wants are removed; anything the user added by hand is
+    // left alone. The file is created if it does not exist yet.
+    async function ensureAntigravityPermission(extraRules: string[]): Promise<void> {
+      const home = process.env.USERPROFILE || process.env.HOME || '';
+      const file = nodePath.join(home, '.gemini', 'antigravity-cli', 'settings.json');
+      const wanted = ['mcp(joplin/*)'].concat(extraRules).filter((r, i, all) => all.indexOf(r) === i);
+      let managed: string[] = [];
+      try { managed = JSON.parse(String((await joplin.settings.value('antigravityManagedRules')) || '[]')); } catch (_) { managed = []; }
+      if (!Array.isArray(managed)) managed = [];
+      let settings: any = {};
+      try { settings = JSON.parse(nodeFs.readFileSync(file, 'utf8')); } catch (_) { /* absent or unreadable: start empty */ }
+      if (!settings || typeof settings !== 'object') settings = {};
+      if (!settings.permissions || typeof settings.permissions !== 'object') settings.permissions = {};
+      if (!Array.isArray(settings.permissions.allow)) settings.permissions.allow = [];
+      const before = settings.permissions.allow.slice();
+      const stale = managed.filter((r) => wanted.indexOf(r) < 0);
+      let allow: string[] = before.filter((r: string) => stale.indexOf(r) < 0);
+      for (const r of wanted) if (allow.indexOf(r) < 0) allow.push(r);
+      if (JSON.stringify(allow) !== JSON.stringify(before)) {
+        settings.permissions.allow = allow;
+        nodeFs.mkdirSync(nodePath.dirname(file), { recursive: true });
+        nodeFs.writeFileSync(file, JSON.stringify(settings, null, 2) + '\n', 'utf8');
+      }
+      if (JSON.stringify(managed) !== JSON.stringify(wanted)) {
+        await joplin.settings.setValue('antigravityManagedRules', JSON.stringify(wanted));
+      }
+    }
 
     /* ---------- conversation history (persisted to dataDir) ---------- */
     const historyPath = nodePath.join(dataDir, 'conversations.json');
@@ -1004,6 +1088,9 @@ joplin.plugins.register({
     let sessionId: string = '';
     // Which backend the RUNNING child belongs to (event formats differ).
     let runBackend: string = 'claude';
+    // Antigravity: whether the running process has emitted its init event
+    // (it exits before init on an unknown --conversation id).
+    let agyInitSeen = false;
     // Backend that OWNS the current sessionId. Ids don't transfer between
     // CLIs, so any mismatch - switching engines mid-chat, or loading a
     // conversation recorded on the other engine - must start fresh instead
@@ -1463,7 +1550,7 @@ joplin.plugins.register({
       sessionBackend = backend;
 
       const extraArgs = String((await joplin.settings.value(
-        backend === 'copilot' ? 'copilotExtraArgs' : 'extraCliArgs')) || '').trim();
+        backend === 'copilot' ? 'copilotExtraArgs' : (backend === 'antigravity' ? 'antigravityExtraArgs' : 'extraCliArgs'))) || '').trim();
 
       let noteContext = '';
       try {
@@ -1492,7 +1579,7 @@ joplin.plugins.register({
           + (memFlat ? 'Current memory (entries separated by •): ' + memFlat : 'The memory note is currently empty.');
       }
 
-      const toolPrefix = backend === 'copilot' ? 'joplin MCP' : 'mcp__joplin';
+      const toolPrefix = (backend === 'copilot' || backend === 'antigravity') ? 'joplin MCP' : 'mcp__joplin';
       const systemPrompt = 'You are embedded in the Joplin note-taking app as an assistant. '
         + 'Use the ' + toolPrefix + ' tools to read, search, create and edit the user\'s notes and notebooks. '
         + 'Notes live in Joplin\'s database, NOT on disk: NEVER use file tools (Read/Edit/Write) or shell commands on a note, and never treat a note id or title as a file path. Every note operation goes through the ' + toolPrefix + ' tools - going file-first and correcting later wastes the user\'s time. '
@@ -1512,7 +1599,42 @@ joplin.plugins.register({
         await runCodex(prompt, systemPrompt, generation);
         return;
       }
-      if (backend === 'copilot') {
+      if (backend === 'antigravity') {
+        bin = String((await joplin.settings.value('antigravityPath')) || '').trim() || 'agy';
+        // The Windows installer drops agy.exe in %LOCALAPPDATA%\agy\bin, which
+        // is on the user's shell PATH but not necessarily on Joplin's.
+        if (process.platform === 'win32' && bin === 'agy') {
+          const installed = nodePath.join(process.env.LOCALAPPDATA || '', 'agy', 'bin', 'agy.exe');
+          if (nodeFs.existsSync(installed)) bin = installed;
+        }
+        const model = await joplin.settings.value('antigravityModel');
+        // Driver mode (agy >= 1.1.15): one NDJSON user event on stdin, events
+        // on stdout, exit 0 once stdin closes and the turn is done. --print
+        // would put the prompt on the command line instead. --add-dir makes
+        // tools run in the workspace rather than agy's scratch dir, and
+        // --disable-slash-commands keeps a "/..." prompt from ending the run.
+        args = [
+          '--input-format', 'stream-json',
+          '--output-format', 'stream-json',
+          '--disable-slash-commands',
+          '--print-timeout', '30m',
+          '--add-dir', winQuote(agyWorkspaceDir),
+          '--add-dir', winQuote(attachmentsDir),
+        ];
+        // AUTO MODE parity (see the Copilot branch): headless agy has no
+        // approval prompt, so this is the only way to lift its Ask rules.
+        if ((await joplin.settings.value('autoApproveAll')) === true) {
+          args.push('--dangerously-skip-permissions');
+        }
+        if (sessionId) { args.push('--conversation', sessionId); }
+        if (model) { args.push('--model', winQuote(String(model))); }
+        if (extraArgs) { args.push(extraArgs); }
+        const allowRules = String((await joplin.settings.value('antigravityAllowTools')) || '')
+          .split(',').map((s: string) => s.trim()).filter((s: string) => !!s);
+        try { await ensureAntigravityPermission(allowRules); } catch (err: any) {
+          post({ name: 'error', text: fmt(t.errAgySettings, { err: String(err && err.message ? err.message : err) }) });
+        }
+      } else if (backend === 'copilot') {
         bin = String((await joplin.settings.value('copilotPath')) || '').trim() || 'copilot';
         const model = await joplin.settings.value('copilotModel');
         args = [
@@ -1562,7 +1684,9 @@ joplin.plugins.register({
       if (!cliExists(bin)) {
         const installCmd = backend === 'copilot'
           ? 'npm install -g @github/copilot'
-          : 'npm install -g @anthropic-ai/claude-code';
+          : backend === 'antigravity'
+            ? (process.platform === 'win32' ? 'irm https://antigravity.google/cli/install.ps1 | iex' : 'curl -fsSL https://antigravity.google/cli/install.sh | bash')
+            : 'npm install -g @anthropic-ai/claude-code';
         post({ name: 'error', text: fmt(t.errCliMissing, { bin, cmd: installCmd }) });
         post({ name: 'busy', busy: false });
         return;
@@ -1586,17 +1710,26 @@ joplin.plugins.register({
           }
         } else {
           const attachmentLines = pendingAttachments.map((a) => '- ' + a.filePath);
-          prompt += '\n\n[The user attached the following files. Use the Read tool to view them:]\n' + attachmentLines.join('\n');
+          // Antigravity: the attachments dir is on --add-dir, so its file
+          // tool can read them without a permission rule.
+          const hint = backend === 'antigravity' ? 'Read them from disk:' : 'Use the Read tool to view them:';
+          prompt += '\n\n[The user attached the following files. ' + hint + ']\n' + attachmentLines.join('\n');
         }
         pendingAttachments = [];
         post({ name: 'attachmentsCleared' });
       }
       record('user', prompt);
-      // Copilot has no --append-system-prompt: context rides at the top of
-      // the prompt itself (recorded history keeps the clean user text above).
-      if (backend === 'copilot') {
+      // Copilot and Antigravity have no --append-system-prompt: context rides
+      // at the top of the prompt itself (recorded history keeps the clean
+      // user text above).
+      if (backend === 'copilot' || backend === 'antigravity') {
         prompt = '<context>' + systemPrompt + '</context>\n\n' + prompt;
       }
+      // agy's driver mode reads one JSON user event per line, not raw text.
+      const stdinPayload = backend === 'antigravity'
+        ? JSON.stringify({ event: 'user', message: { content: prompt } }) + '\n'
+        : prompt;
+      agyInitSeen = false;
       runBackend = backend;
       post({ name: 'busy', busy: true });
       try {
@@ -1604,6 +1737,10 @@ joplin.plugins.register({
           shell: process.platform === 'win32',
           windowsHide: true,
           stdio: ['pipe', 'pipe', 'pipe'],
+          // agy treats its cwd as the project: keep it in the plugin's own
+          // workspace so .agents/mcp_config.json is found and file tools
+          // cannot touch a real project by accident.
+          cwd: backend === 'antigravity' ? agyWorkspaceDir : undefined,
         });
       } catch (err: any) {
         post({ name: 'error', text: fmt(t.errStartFailed, { bin, err: String(err && err.message ? err.message : err) }) });
@@ -1612,7 +1749,7 @@ joplin.plugins.register({
         return;
       }
 
-      child.stdin.write(prompt);
+      child.stdin.write(stdinPayload);
       child.stdin.end();
 
       let stdoutBuf = '';
@@ -1625,7 +1762,11 @@ joplin.plugins.register({
         while ((idx = stdoutBuf.indexOf('\n')) >= 0) {
           const line = stdoutBuf.slice(0, idx).trim();
           stdoutBuf = stdoutBuf.slice(idx + 1);
-          if (line) { if (runBackend === 'copilot') handleCopilotEvent(line); else handleClaudeEvent(line); }
+          if (line) {
+            if (runBackend === 'copilot') handleCopilotEvent(line);
+            else if (runBackend === 'antigravity') handleAntigravityEvent(line);
+            else handleClaudeEvent(line);
+          }
         }
       });
       child.stderr.on('data', (chunk: any) => { stderrChunks.push(chunk); });
@@ -1646,6 +1787,13 @@ joplin.plugins.register({
             sessionId = '';
             sessionBackend = '';
           }
+        }
+        // agy dies before its init event when --conversation names a thread
+        // it does not have (or auth failed); either way the next turn must
+        // not carry that id again.
+        if (runBackend === 'antigravity' && !agyInitSeen) {
+          if (code !== 0 && !stderrText) post({ name: 'error', text: fmt(t.errExited, { bin, code, err: 'no output' }) });
+          if (sessionId) { sessionId = ''; sessionBackend = ''; }
         }
         child = null;
         post({ name: 'busy', busy: startingRequest || apiInFlight });
@@ -1845,7 +1993,7 @@ joplin.plugins.register({
       };
 
       try {
-        await client.request('initialize', { clientInfo: { name: 'joplin_aide', version: '1.3.1' } });
+        await client.request('initialize', { clientInfo: { name: 'joplin_aide', version: '1.3.2' } });
         if (finished) return;
         client.send({ method: 'initialized', params: {} });
         const params: any = {
@@ -2003,6 +2151,88 @@ joplin.plugins.register({
       }
     }
 
+    // Antigravity CLI --output-format stream-json: NDJSON, one event per line.
+    // init -> conversation id; step_update(agent_response) -> text deltas,
+    // final text at DONE; step_update(tool) -> chips, permission denials as
+    // ERROR frames; result -> turn end (+ denied_actions). Headless agy has
+    // no approval prompt: a denial simply ends the turn with an empty reply.
+    let agyText = '';
+    let agyStreaming = false;
+    let agyDenied: string[] = [];
+    function handleAntigravityEvent(line: string): void {
+      let ev: any;
+      try { ev = JSON.parse(line); } catch (_) { return; }
+      const adoptConversation = (id: any) => {
+        if (!id || String(id) === sessionId) return;
+        sessionId = String(id);
+        if (currentConv) { currentConv.sessionId = sessionId; currentConv.backend = runBackend; saveHistory(); }
+      };
+      if (ev.event === 'init') {
+        agyInitSeen = true;
+        adoptConversation(ev.conversation_id);
+        return;
+      }
+      if (ev.event === 'step_update') {
+        const s = ev.step_update || {};
+        if (s.step_type === 'agent_response') {
+          const delta = typeof s.text_delta === 'string' ? s.text_delta : '';
+          // Thinking-only steps end with a DONE that carries no text, or a
+          // lone "\n": never open a bubble for those.
+          if (delta && (agyStreaming || delta.trim())) {
+            if (!agyStreaming) { agyStreaming = true; agyText = ''; post({ name: 'assistantStart' }); }
+            agyText += delta;
+            post({ name: 'assistantDelta', text: delta });
+          }
+          if (s.state === 'DONE' || s.state === 'ERROR') {
+            if (agyStreaming && agyText.trim()) {
+              record('assistant', agyText);
+              post({ name: 'assistantText', text: agyText });
+            }
+            agyStreaming = false;
+            agyText = '';
+          }
+        } else if (s.step_type === 'tool') {
+          const info = s.tool_info || {};
+          const params = info.parameters || {};
+          // MCP calls arrive as the generic call_mcp_tool; the chip should
+          // name the Joplin tool. Before calling one, agy view_file's its
+          // own cached tool schema under ~/.gemini/antigravity-cli/mcp/ -
+          // internal bookkeeping, not something to show.
+          let name = String(s.tool_name || info.name || 'tool');
+          if (name === 'call_mcp_tool' && params.ToolName) name = String(params.ToolName);
+          if (name === 'view_file' && /[\\/]antigravity-cli[\\/]mcp[\\/]/.test(String(params.AbsolutePath || ''))) return;
+          if (s.state === 'ACTIVE') {
+            record('tool', name);
+            post({ name: 'toolUse', tool: name });
+          } else if (s.state === 'ERROR') {
+            const msg = String((info.error && info.error.message) || '');
+            if (/permission check failed|denied permission/i.test(msg)) agyDenied.push(name);
+            else if (msg) post({ name: 'toolDone', text: '✗ ' + name + ': ' + msg.slice(0, 200) });
+          }
+        }
+        return;
+      }
+      if (ev.event === 'result') {
+        const r = ev.result || {};
+        adoptConversation(r.conversation_id);
+        let isError = false;
+        if (r.status && r.status !== 'SUCCESS') {
+          isError = true;
+          post({ name: 'error', text: String(r.error || r.status).slice(0, 500) });
+        }
+        if (agyDenied.length) {
+          // denied_actions is cumulative per process; the frames seen this
+          // turn are what actually happened now.
+          const what = agyDenied.filter((n, i) => agyDenied.indexOf(n) === i).join(', ');
+          post({ name: 'error', text: fmt(t.errAgyDenied, { what }) });
+          agyDenied = [];
+        }
+        agyStreaming = false;
+        agyText = '';
+        post({ name: 'turnDone', isError });
+      }
+    }
+
     await pushNoteContext();
 
     /* ---------- webview messages ---------- */
@@ -2045,7 +2275,7 @@ joplin.plugins.register({
         // Dropdown switch from the panel header. Takes effect on the next
         // message: runClaude reads the setting per turn, and the
         // lastBackend guard starts a fresh CLI session automatically.
-        const next = (msg.value === 'copilot' || msg.value === 'kimi' || msg.value === 'codex') ? msg.value : 'claude';
+        const next = ['copilot', 'codex', 'antigravity', 'kimi'].indexOf(msg.value) >= 0 ? msg.value : 'claude';
         const cur = String((await joplin.settings.value('backend')) || 'claude');
         if (next !== cur) {
           await joplin.settings.setValue('backend', next);

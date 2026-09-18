@@ -655,13 +655,14 @@ webviewApi.onMessage(function (msg) {
     }
   } else if (m.name === 'backendState') {
     var bb = el('cc-backend');
-    var labels = { claude: 'Claude', copilot: 'Copilot', codex: 'Codex', kimi: 'Kimi' };
+    var labels = { claude: 'Claude', copilot: 'Copilot', codex: 'Codex', antigravity: 'Antigravity', kimi: 'Kimi' };
     var backend = labels[m.backend] ? m.backend : 'claude';
     var label = labels[backend];
     if (bb) {
       bb.value = backend;
       bb.classList.toggle('cc-backend-copilot', backend === 'copilot');
       bb.classList.toggle('cc-backend-codex', backend === 'codex');
+      bb.classList.toggle('cc-backend-antigravity', backend === 'antigravity');
       bb.classList.toggle('cc-backend-kimi', backend === 'kimi');
     }
     if (m.switched) {

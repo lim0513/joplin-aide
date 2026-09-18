@@ -1,6 +1,6 @@
 # Joplin Aide
 
-[Joplin](https://joplinapp.org/) 的 AI 助手聊天面板——让 AI 读取、搜索、创建和编辑你的笔记,由你本地已有的 CLI 驱动([Claude Code](https://claude.com/claude-code)、[GitHub Copilot CLI](https://github.com/features/copilot/cli) 或 [OpenAI Codex CLI](https://developers.openai.com/codex/cli)),或直接用 [Kimi(Moonshot)](https://platform.moonshot.cn/) API——无需任何 CLI。
+[Joplin](https://joplinapp.org/) 的 AI 助手聊天面板——让 AI 读取、搜索、创建和编辑你的笔记,由你本地已有的 CLI 驱动([Claude Code](https://claude.com/claude-code)、[GitHub Copilot CLI](https://github.com/features/copilot/cli)、[OpenAI Codex CLI](https://developers.openai.com/codex/cli) 或 [Google Antigravity CLI](https://antigravity.google/product/antigravity-cli)),或直接用 [Kimi(Moonshot)](https://platform.moonshot.cn/) API——无需任何 CLI。
 
 前身为 *Joplin Claude*。
 
@@ -9,7 +9,7 @@
 
 ## 功能
 
-- **多后端** —— Claude Code、GitHub Copilot 或 OpenAI Codex CLI,或 **Kimi(Moonshot)API**(无需 CLI);面板标题栏的胶囊按钮一键切换引擎(切换后下一条消息自动开新会话)。Kimi 后端额外支持上下文缓存、内置联网搜索、图片输入,以及 kimi-k3 的思考过程实时显示
+- **多后端** —— Claude Code、GitHub Copilot、OpenAI Codex 或 Google Antigravity CLI,或 **Kimi(Moonshot)API**(无需 CLI);面板标题栏的胶囊按钮一键切换引擎(切换后下一条消息自动开新会话)。Kimi 后端额外支持上下文缓存、内置联网搜索、图片输入,以及 kimi-k3 的思考过程实时显示
 - **聊天面板** —— 流式回复、完整 Markdown 渲染(标题、表格、代码、可点击链接)、工具活动 chip、标题栏实时显示当前操作的笔记
 - **19 个笔记工具** —— 笔记/笔记本的列出、搜索、读取、创建、修改、删除,标签、待办、笔记附件,以及丰富的搜索语法(`tag:`、`type:todo`、`updated:day-7` 等)
 - **写操作确认** —— 每次创建/修改/删除都等待你在面板里允许或拒绝,支持"本会话内一直允许";另有(危险、默认关闭的)全自动模式。确认在插件服务端强制执行,对两个后端同样生效
@@ -50,6 +50,7 @@ MCP 代理是插件内置的零依赖脚本,由 CLI 通过 **Joplin 自带的 El
   - [Claude Code](https://claude.com/claude-code) —— `claude` 在 PATH 中(或在设置里指定完整路径)
   - [GitHub Copilot CLI](https://github.com/features/copilot/cli) —— `copilot` 在 PATH 中(或在设置里指定完整路径);所有 Copilot 套餐均含,Free 档每月请求数有限
   - [OpenAI Codex CLI](https://developers.openai.com/codex/cli) —— `codex` 在 PATH 中或已安装 Codex 桌面版(Windows 下自动识别);先运行一次 `codex login`。走 `codex app-server`,现有的 Codex 安装和配置原样沿用
+  - [Google Antigravity CLI](https://antigravity.google/docs/cli/install/) —— `agy` 在 PATH 中或 Windows 安装器默认位置(自动识别);先在终端运行一次 `agy` 完成登录。headless 的 agy 无法弹窗询问,插件会把自己的放行规则(`mcp(joplin/*)` 加上"额外允许的工具"设置,默认 `read_url(*)`)维护在 `~/.gemini/antigravity-cli/settings.json` 里;你手工加进去的规则不会被动
 
 ## 设置
 
