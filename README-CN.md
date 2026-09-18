@@ -58,6 +58,8 @@ MCP 代理是插件内置的零依赖脚本,由 CLI 通过 **Joplin 自带的 El
 
 ## 开发
 
+每个后端怎么驱动(启动参数、权限、会话、事件映射、手测清单)在 `docs/` 里各有一份:[Claude](docs/claude-backend.md)、[Copilot](docs/copilot-backend.md)、[Codex](docs/codex-backend.md)、[Antigravity](docs/antigravity-backend.md)、[Kimi](docs/kimi-backend.md)。
+
 ```bash
 npm install
 npm run dist

@@ -58,6 +58,8 @@ The MCP proxy is a zero-dependency script shipped inside the plugin. The CLI lau
 
 ## Development
 
+How each backend is driven (launch flags, permissions, sessions, event mapping, manual test list) is written up per backend in `docs/`: [Claude](docs/claude-backend.md), [Copilot](docs/copilot-backend.md), [Codex](docs/codex-backend.md), [Antigravity](docs/antigravity-backend.md), [Kimi](docs/kimi-backend.md).
+
 ```bash
 npm install
 npm run dist

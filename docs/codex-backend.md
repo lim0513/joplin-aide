@@ -1,4 +1,4 @@
-# Codex backend: how it works and how to test it (1.3.1)
+# Codex backend: how it works and how to test it
 
 Select **Codex** in the Aide panel. Run `codex login` once before using it.
 On Windows the plugin uses the Codex desktop app binary when present

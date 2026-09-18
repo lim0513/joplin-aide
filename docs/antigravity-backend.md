@@ -1,4 +1,4 @@
-# Antigravity backend: how it works and how to test it (1.3.2)
+# Antigravity backend: how it works and how to test it
 
 Select **Antigravity** in the Aide panel. Install the CLI from
 https://antigravity.google/docs/cli/install/ and run `agy` once in a terminal
